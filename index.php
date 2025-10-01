@@ -29,6 +29,9 @@ if (isset($_POST['update_exif'])) {
     $param = null;
     $change_value = null;
 
+    $current_pitch = isset($_GET['pitch']) ? $_GET['pitch'] : 0;
+    $current_yaw = isset($_GET['yaw']) ? $_GET['yaw'] : 0;
+
     switch ($action) {
         case 'roll_plus':
         case 'roll_plus_5':
@@ -42,13 +45,11 @@ if (isset($_POST['update_exif'])) {
             break;
         case 'roll_fix': 
             $param = 'PoseRollDegrees';
-            if(isset($_GET['yaw'])) {
-              if($_GET['yaw'] < 0) {
-                $change_value = $roll = isset($_GET['pitch']) ? (float)$roll-$_GET['pitch'] : $roll;
-              }
-              else {
-                $change_value = $roll = isset($_GET['pitch']) ? (float)$roll+$_GET['pitch'] : $roll;
-              }
+            if($current_yaw < 0) {
+              $change_value = $roll = $current_pitch ? (float)$roll-$current_pitch : $roll;
+            }
+            else {
+              $change_value = $roll = $current_pitch ? (float)$roll+$current_pitch : $roll;
             }
             $reset_pitch = True;
             break;
@@ -72,7 +73,12 @@ if (isset($_POST['update_exif'])) {
             break;
         case 'pitch_fix':
             $param = 'PosePitchDegrees';
-            $change_value = $pitch = isset($_GET['pitch']) ? (float)$pitch-$_GET['pitch'] : $pitch;
+            if(($current_yaw <= 0 && $current_yaw > -90) || ($current_yaw >= 0 && $current_yaw < 90)) {
+              $change_value = $pitch = $current_pitch ? (float)$pitch-$current_pitch : $pitch;
+            }
+            else {
+              $change_value = $pitch = $current_pitch ? (float)$pitch+$current_pitch : $pitch;
+            }
             $reset_pitch = True;
             break;
         case 'pitch_minus':
@@ -83,7 +89,7 @@ if (isset($_POST['update_exif'])) {
             break;
         case 'yaw_fix':
             $param = 'PoseHeadingDegrees';
-            $change_value = $yaw = isset($_GET['yaw']) ? (float)$_GET['yaw'] : $yaw;
+            $change_value = $yaw = $current_yaw ? (float)$current_yaw : $yaw;
             break;
     }
 
