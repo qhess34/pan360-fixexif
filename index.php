@@ -1,9 +1,79 @@
 <?php
 // --- Récupération des images ---
-$images = array_merge(glob("images/*.jpg"), glob("images/*.JPG"), glob("images/*/*.JPG"));
-natsort($images);
+if(isset($_ENV['PANORAMAX_URL'])) {
+  $geojsonContent = file_get_contents($_ENV['PANORAMAX_URL']);
+  if ($geojsonContent === false) {
+    die("Impossible de lire le fichier GeoJSON depuis l'URL.");
+  } 
+  $data = json_decode($geojsonContent, true);
+  $images = [];
+  $metadatas = [];
+ 
+  $root_dir = "datas/";
+  $bg_commands = [];
+  foreach($data['features'] as $item) {
+    $storage_dir = $root_dir . $item['collection'] . '/';
+    if (!is_dir($storage_dir)) mkdir($storage_dir, 0777, true);
+    $remote_url = $item['assets']['sd']['href'];
+    $props = $item['properties'];
+    $id = $item['id'] ?? md5($remote_url);
+    $local_path = $storage_dir . $id . ".jpg";
+
+    $exifs[$local_path]['PosePitchDegrees']   = $props['pers:pitch'] ?? $props['exif']['Xmp.GPano.PosePitchDegrees'] ?? 0;
+    $exifs[$local_path]['PoseRollDegrees']    = $props['pers:roll']  ?? $props['exif']['Xmp.GPano.PoseRollDegrees'] ?? 0;
+    $exifs[$local_path]['PoseHeadingDegrees'] = $props['pers:yaw']   ?? $props['exif']['Xmp.GPano.PoseHeadingDegrees'] ?? 0;
+
+    if (!file_exists($local_path)) {
+        $y = $exifs[$local_path]['PoseHeadingDegrees'];
+        $p = $exifs[$local_path]['PosePitchDegrees'];
+        $r = $exifs[$local_path]['PoseRollDegrees'];
+
+        $bg_commands[] = "(" .
+            "curl -L -s -o " . escapeshellarg($local_path) . " " . escapeshellarg($remote_url) . " && " .
+            "sleep 0.3 && " .
+            "W=$(exiftool -S -T -ImageWidth " . escapeshellarg($local_path) . ") && " .
+            "H=$(exiftool -S -T -ImageHeight " . escapeshellarg($local_path) . ") && " .
+            "exiftool -overwrite_original " .
+            "-XMP-GPano:PoseHeadingDegrees=" . escapeshellarg((string)$y) . " " .
+            "-XMP-GPano:PosePitchDegrees=" . escapeshellarg((string)$p) . " " .
+            "-XMP-GPano:PoseRollDegrees=" . escapeshellarg((string)$r) . " " .
+            "-XMP-GPano:FullPanoWidthPixels=\$W " .
+            "-XMP-GPano:FullPanoHeightPixels=\$H " .
+            "-XMP-GPano:CroppedAreaImageWidthPixels=\$W " .
+            "-XMP-GPano:CroppedAreaImageHeightPixels=\$H " .
+            "-XMP-GPano:CroppedAreaLeftPixels=0 " .
+            "-XMP-GPano:CroppedAreaTopPixels=0 " .
+            escapeshellarg($local_path) .
+            ")";
+    }
+
+
+    $images[] = $local_path;
+  }
+  if (!empty($bg_commands) && isset($storage_dir)) {
+    $lock_file = $storage_dir . "download.lock";
+    if (!file_exists($lock_file)) {
+      shell_exec("(touch " . escapeshellarg($lock_file) . " && " . implode(" && ", $bg_commands) . " && rm " . escapeshellarg($lock_file) . ") > /dev/null 2>&1 &");
+    }
+  }
+}
+
+else {
+  $images = array_merge(glob("images/*.jpg"), glob("images/*.JPG"), glob("images/*/*.jpg"),  glob("images/*/*.JPG"));
+  natsort($images);
+}
+
+
 $images = array_values($images);
 $img_current = isset($_GET['img']) ? (int)$_GET['img'] : 0;
+
+$missing_count = 0;
+if (isset($_ENV['PANORAMAX_URL'])) {
+    foreach ($images as $img) {
+        if (!file_exists($img)) $missing_count++;
+    }
+}
+$current_image_exists = file_exists($images[$img_current] ?? '');
 
 // --- Lecture des métadonnées EXIF ---
 function getExifValue(string $file, string $tag): float {
@@ -101,6 +171,68 @@ if (isset($_POST['update_exif'])) {
         );
     }
 }
+// --- Sync results back to Panoramax API ---
+if (isset($_POST['sync_api']) && isset($_ENV['PANORAMAX_URL']) && isset($_ENV['PANORAMAX_TOKEN'])) {
+    $token = $_ENV['PANORAMAX_TOKEN'];
+    $url_parts = parse_url($_ENV['PANORAMAX_URL']);
+    $api_base = $url_parts['scheme'] . '://' . $url_parts['host'] . (isset($url_parts['port']) ? ':' . $url_parts['port'] : '') . '/api';
+    
+    $success_count = 0;
+    $root_dir = "datas/";
+    $last_storage_dir = null;
+
+        foreach ($data['features'] as $item) {
+            $collection_id = $item['collection'];
+            $item_id = $item['id'];
+            $storage_dir = $root_dir . $collection_id . '/';
+            $last_storage_dir = $storage_dir;
+            $local_path = $storage_dir . $item_id . ".jpg";
+
+            if (file_exists($local_path)) {
+                $p = getExifValue($local_path, 'PosePitchDegrees') ;
+                $r = getExifValue($local_path, 'PoseRollDegrees');
+                $y = getExifValue($local_path, 'PoseHeadingDegrees');
+
+                // Original values from Panoramax (for comparison)
+                $props = $item['properties'];
+                $op = (float)($props['pers:pitch'] ?? $props['exif']['Xmp.GPano.PosePitchDegrees'] ?? 0);
+                $or = (float)($props['pers:roll']  ?? $props['exif']['Xmp.GPano.PoseRollDegrees'] ?? 0);
+                $oy = (float)($props['pers:yaw']   ?? $props['exif']['Xmp.GPano.PoseHeadingDegrees'] ?? 0);
+
+                // Only sync if values have changed (rounding to avoid float precision issues)
+                if (round($p, 4) != round($op, 4) || round($r, 4) != round($or, 4) || round($y, 4) != round($oy, 4)) {
+                    $patch_url = "$api_base/collections/$collection_id/items/$item_id";
+                    $patch_data = json_encode(['pitch' => $p,  'roll' => $r, 'yaw' => $y]);
+
+                    $ch = curl_init($patch_url);
+                    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PATCH');
+                    curl_setopt($ch, CURLOPT_POSTFIELDS, $patch_data);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                        'Content-Type: application/json',
+                        'Authorization: Bearer ' . $token,
+                        'accept: application/geo+json'
+                    ]);
+
+                    $response = curl_exec($ch);
+                    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    curl_close($ch);
+
+                    if ($status >= 200 && $status < 300) {
+                        $success_count++;
+                    }
+                    usleep(300000); // 0.3s delay between updates
+                }
+            }
+        }
+
+        if ($last_storage_dir && is_dir($last_storage_dir)) {
+            shell_exec("rm -rf " . escapeshellarg($last_storage_dir));
+            $sync_result = "Sync completed: $success_count pictures updated. Local storage cleaned.";
+        } else {
+            $sync_result = "Sync finished ($success_count pictures updated).";
+        }
+}
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -109,6 +241,40 @@ if (isset($_POST['update_exif'])) {
     <title>Visionneuse Pannellum</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum/build/pannellum.css"/>
     <style>
+        .loader-overlay {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 20px;
+            border-radius: 5px;
+            border: 1px solid #4CAF50;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4CAF50;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .loader-overlay.full-screen {
+            top: 0; right: 0; bottom: 0; left: 0;
+            margin: auto;
+            width: fit-content;
+            height: fit-content;
+            box-shadow: 0 0 100px rgba(0,0,0,0.9);
+            padding: 30px 50px;
+            font-size: 20px;
+        }
         body {
             margin: 0;
             font-family: sans-serif;
@@ -177,6 +343,20 @@ if (isset($_POST['update_exif'])) {
     </script>
 </head>
 <body>
+    <?php if ($missing_count > 0): ?>
+    <div class="loader-overlay" <?= $current_image_exists ? 'style="opacity: 0.5; border-color: orange;"' : '' ?>>
+        <div class="spinner"></div>
+        <span>Téléchargement de la séquence : <b><?= $missing_count ?></b> images restantes...</span>
+        <?php if (!$current_image_exists): ?>
+            <script>setTimeout(() => location.reload(), 3000);</script>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+
+    <div id="sync-loader" class="loader-overlay full-screen" style="display: none;">
+        <div class="spinner" style="width: 40px; height: 40px;"></div>
+        <span>Synchronisation vers Panoramax en cours...</span>
+    </div>
 <div tabindex="0" id="viewer-container">
     <div id="panorama"></div>
 
@@ -234,6 +414,10 @@ if (isset($_POST['update_exif'])) {
          <h3 style="text-align: center;">Yaw (<?=$yaw ?>)</h3>
          <div style="display: flex; gap: 5px;">
            <button id="yaw_fix" type="submit" name="update_exif" value="yaw_fix">Fix heading</button>
+           <?php if (isset($_ENV['PANORAMAX_URL']) && isset($_ENV['PANORAMAX_TOKEN'])): ?>
+           <button id="sync_api" type="submit" name="sync_api" value="1" style="background-color: #4CAF50; color: white;" onclick="document.getElementById('sync-loader').style.display='flex';">Synchroniser vers Panoramax (V)</button>
+           <?php if (isset($sync_result)) echo "<span style='margin-left: 10px; color: #4CAF50;'>$sync_result</span>"; ?>
+           <?php endif; ?>
          </div>
         </div>
       </div>
@@ -340,4 +524,3 @@ if (isset($_POST['update_exif'])) {
 
 </body>
 </html>
-
