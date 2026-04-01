@@ -10,6 +10,7 @@ Les corrections s’appliquent sur les balises EXIF suivantes :
 ### Photos Panoramax 
 
 Les corrections d'appliquent sur les metadatas `pers:roll`, `pers:pitch`, `pers:yaw`
+
 ---
 
 ## Installation
@@ -19,7 +20,8 @@ Les corrections d'appliquent sur les metadatas `pers:roll`, `pers:pitch`, `pers:
    ```bash
    docker build -t php8-apache-exiftool .
 
-2a. Images locales : Démarrer le conteneur, en remplaçant [REPERTOIRE_IMAGES] par le chemin vers le dossier contenant les images à traiter.
+2. Lancement
+- Images locales : Démarrer le conteneur, en remplaçant [REPERTOIRE_IMAGES] par le chemin vers le dossier contenant les images à traiter.
 Les fichiers doivent être accessibles en écriture par l’utilisateur www-data (UID 33).
 
    ```bash
@@ -28,19 +30,20 @@ Les fichiers doivent être accessibles en écriture par l’utilisateur www-data
     -v [REPERTOIRE_IMAGES]/:/var/www/html/images/ \
     php8-apache-exiftool
 
-2b. Sequence Panoramax
+- Sequence Panoramax
 
-Remplacer URL_SEQUENCE par l'URL de la sequence du type https://panoramax.openstreetmap.fr/api/collections/XXX/items
-Remplacer TOKEN_PANORAMAX par le Token Panoramax (favoriser l'usage de .env pour ce champs)
+  Remplacer URL_SEQUENCE par l'URL de la sequence du type https://panoramax.openstreetmap.fr/api/collections/XXX/items
+  Remplacer TOKEN_PANORAMAX par le Token Panoramax (favoriser l'usage de .env pour ce champs)
 
    ```bash
    docker run --rm -p 5555:80 \
     -v .:/var/www/html/ \
     -v [REPERTOIRE_IMAGES]/:/var/www/html/images/ \
-    -e PANORAMAX_URL=URL_SEQUENCE
-    -e PANORAMAX_TOKEN=TOKEN_PANORAMAX
+    -e PANORAMAX_URL=URL_SEQUENCE \
+    -e PANORAMAX_TOKEN=TOKEN_PANORAMAX \
     php8-apache-exiftool
-
+  ```
+ 
 3. Ouvrir l’interface via : http://127.0.0.1:5555
 
 ## Utilisation
