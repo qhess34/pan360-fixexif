@@ -191,6 +191,9 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
       sd,
       hd: (assets.hd && assets.hd.href) || sd,
       datetime: p.datetime || '',
+      gps: (feature.geometry && feature.geometry.coordinates) || null,
+      azimuth: firstNumber(p['view:azimuth'], exif['Exif.GPSInfo.GPSImgDirection']),
+      relHeading: 0,
       is360: (p['pers:interior_orientation'] || {}).field_of_view === 360,
       original: {
         pitch: firstNumber(p['pers:pitch'], exif['Xmp.GPano.PosePitchDegrees']),
@@ -198,6 +201,23 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
         yaw: firstNumber(p['pers:yaw'], exif['Xmp.GPano.PoseHeadingDegrees']),
       },
     };
+  }
+
+  /** Azimut (0-360°) du segment GPS from → to. Copie de getAzimuth() de @panoramax/web-viewer. */
+  function getAzimuth(from, to) {
+    return (radToDeg(Math.atan2(to[0] - from[0], to[1] - from[1])) + 360) % 360;
+  }
+
+  /**
+   * Écart entre le cap de la photo (view:azimuth) et la direction de déplacement dans la
+   * séquence. Copie de getRelativeHeading() de @panoramax/web-viewer : c'est ce qui détermine
+   * la vue d'ouverture de Panoramax (yaw = -écart).
+   */
+  function relativeHeading(item, prev, next) {
+    if (!item.gps) return 0;
+    if (prev && prev.gps) return (((item.azimuth - getAzimuth(prev.gps, item.gps)) + 180) % 360) - 180;
+    if (next && next.gps) return (((item.azimuth - getAzimuth(item.gps, next.gps)) + 180) % 360) - 180;
+    return 0;
   }
 
   async function loadSequence(instance, collectionId, startIndex = 0) {
@@ -220,6 +240,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
         url = next ? next.href : null;
       }
       if (!items.length) throw new Error('Aucune photo trouvée dans cette séquence.');
+      items.forEach((item, i) => { item.relHeading = relativeHeading(item, items[i - 1], items[i + 1]); });
 
       state.instance = instance;
       state.collectionId = collectionId;
@@ -340,6 +361,11 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   // ---------------------------------------------------------------------------
   const isAbort = e => !!e && (e.name === 'AbortError' || /abort/i.test(e.message || ''));
 
+  /** Direction d'ouverture de la vue dans Panoramax (sens de déplacement), en radians. */
+  function startYaw(item = currentItem()) {
+    return item ? degToRad(-item.relHeading) : 0;
+  }
+
   function pictureUrl(item) {
     return settings.quality === 'hd' ? item.hd : item.sd;
   }
@@ -349,7 +375,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
       container: 'panorama',
       panorama: pictureUrl(item),
       sphereCorrection: displayedCorrection(item),
-      defaultYaw: 0,
+      defaultYaw: startYaw(item),
       defaultPitch: 0,
       defaultZoomLvl: DEFAULT_ZOOM,
       minFov: MIN_FOV,
@@ -373,7 +399,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     } else {
       viewer.setPanorama(pictureUrl(item), {
         sphereCorrection: displayedCorrection(item),
-        position: { yaw: 0, pitch: 0 },
+        position: { yaw: startYaw(item), pitch: 0 },
         transition: false,
         showLoader: true,
       }).then(() => applyPose()).catch(e => {
@@ -399,15 +425,15 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     showImage(((state.index + delta) % n + n) % n);
   }
 
-  /** Oriente la vue (angle relatif à l'avant de la photo, comme dans Panoramax). */
+  /** Oriente la vue (angle relatif au sens de déplacement, vue d'ouverture de Panoramax). */
   function lookAt(yawDeg) {
     if (!viewer) return;
-    viewer.rotate({ yaw: degToRad(yawDeg), pitch: 0 });
+    viewer.rotate({ yaw: startYaw() + degToRad(yawDeg), pitch: 0 });
   }
 
   function resetView() {
     if (!viewer) return;
-    viewer.rotate({ yaw: 0, pitch: 0 });
+    viewer.rotate({ yaw: startYaw(), pitch: 0 });
     viewer.zoom(DEFAULT_ZOOM);
   }
 
@@ -443,17 +469,17 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     viewer.rotate({ yaw: pos.yaw, pitch: 0 });
   }
 
-  /** La direction visée devient l'avant de la photo (yaw 0 dans Panoramax). */
+  /** La direction visée devient la vue d'ouverture de Panoramax (sens de déplacement). */
   function fixYaw() {
     if (!viewer) return;
     const pos = viewer.getPosition();
     const dh = viewer.dataHelper;
     const from = dh.sphericalCoordsToVector3({ yaw: pos.yaw, pitch: 0 }).normalize();
-    const to = dh.sphericalCoordsToVector3({ yaw: 0, pitch: 0 }).normalize();
+    const to = dh.sphericalCoordsToVector3({ yaw: startYaw(), pitch: 0 }).normalize();
     const up = new Vector3(0, 1, 0);
     const angle = Math.atan2(new Vector3().crossVectors(from, to).dot(up), from.dot(to));
     composeRotation(new Quaternion().setFromAxisAngle(up, angle));
-    viewer.rotate({ yaw: 0, pitch: pos.pitch });
+    viewer.rotate({ yaw: startYaw(), pitch: pos.pitch });
   }
 
   function step(axis, delta) {
@@ -631,7 +657,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     if (viewer) {
       try {
         const pos = viewer.getPosition();
-        $('hudYaw').textContent = norm180(radToDeg(pos.yaw)).toFixed(1);
+        $('hudYaw').textContent = norm180(radToDeg(pos.yaw - startYaw())).toFixed(1);
         $('hudPitch').textContent = radToDeg(pos.pitch).toFixed(1);
         $('hudFov').textContent = viewer.state.hFov.toFixed(0);
       } catch (e) { /* visionneuse en cours de chargement */ }
@@ -741,7 +767,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   const SHORTCUTS = [
     { code: 'KeyQ', azerty: 'A', label: 'FIX horizon (horizon sur la ligne rouge)', run: fixHorizon },
     { code: 'KeyW', azerty: 'Z', label: 'FIX horizon (idem)', run: fixHorizon },
-    { code: 'KeyE', azerty: 'E', label: 'Fix heading (la direction visée devient l\'avant)', run: fixYaw },
+    { code: 'KeyE', azerty: 'E', label: 'Fix heading (la direction visée devient la vue d\'ouverture)', run: fixYaw },
     { code: 'KeyA', azerty: 'Q', label: 'Rotation -90°', run: () => lookAt(-90) },
     { code: 'KeyS', azerty: 'S', label: 'Rotation 0°', run: () => lookAt(0) },
     { code: 'KeyD', azerty: 'D', label: 'Rotation +90°', run: () => lookAt(90) },

@@ -5,7 +5,8 @@ l'orientation **Pitch / Roll / Yaw** de vos photos 360° publiées sur [Panorama
 
 L'affichage utilise [Photo Sphere Viewer](https://photo-sphere-viewer.js.org/) avec exactement la même
 transformation que le viewer officiel Panoramax (`sphereCorrection = {pan: yaw, tilt: -pitch, roll: roll}`) :
-ce que vous voyez est ce que Panoramax affichera.
+ce que vous voyez est ce que Panoramax affichera. Comme Panoramax, la vue s'ouvre dans le sens de
+déplacement de la séquence (calculé à partir du GPS des photos voisines et de `view:azimuth`).
 
 Les corrections sont visibles en direct dans la visionneuse puis envoyées à l'API Panoramax
 (`PATCH /api/collections/{collection}/items/{photo}` avec `pitch`, `roll`, `yaw`),
@@ -39,7 +40,8 @@ python3 -m http.server 5555   # puis http://127.0.0.1:5555
    - **Horizon** : dans n'importe quelle direction, monter/descendre la vue pour poser l'horizon réel
      sur la ligne rouge, puis **FIX horizon** (pitch et roll sont recalculés ensemble). Répéter dans
      une direction perpendiculaire (ex. 0° puis 90°) pour un résultat parfait.
-   - **Yaw** : tourner la vue vers la direction de prise de vue (l'« avant ») puis **Fix heading**.
+   - **Yaw** : tourner la vue vers la direction qui doit s'afficher à l'ouverture (sens de déplacement)
+     puis **Fix heading**.
    - Les boutons ▲/▼, ↻/↺ et les curseurs permettent un réglage fin ; **RESET** remet l'axe à 0.
 4. **Synchroniser vers Panoramax** envoie toutes les photos modifiées
    (ou **Enregistrer cette photo** pour la photo courante uniquement).
@@ -56,8 +58,8 @@ l'aide intégrée affiche les touches de votre clavier quand le navigateur le pe
 | Touche | Action |
 |---|---|
 | **A** ou **Z** | FIX horizon (horizon posé sur la ligne rouge) |
-| **E** | Fix heading : la direction visée devient l'avant |
-| **Q** / **S** / **D** / **F** | Vue à -90° / 0° / +90° / 180° |
+| **E** | Fix heading : la direction visée devient la vue d'ouverture |
+| **Q** / **S** / **D** / **F** | Vue à -90° / 0° / +90° / 180° (0° = sens de déplacement) |
 | **W** / **C** (ou PgUp / PgDn) | Image précédente / suivante |
 | **X** | Vue par défaut (selon le yaw) |
 | **V** | Synchroniser vers Panoramax |
