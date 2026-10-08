@@ -8,7 +8,7 @@
  * Le paramétrage (instance, token) et les modifications en attente sont gardés dans le
  * stockage local du navigateur.
  */
-import { Viewer } from '@photo-sphere-viewer/core';
+import { EquirectangularAdapter, Viewer } from '@photo-sphere-viewer/core';
 import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
 
 (() => {
@@ -373,6 +373,9 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   function createViewer(item) {
     viewer = new Viewer({
       container: 'panorama',
+      // Comme Panoramax : on ignore les métadonnées XMP GPano de l'image (PoseHeadingDegrees…),
+      // seules les valeurs de l'API (pers:yaw / pers:pitch / pers:roll) comptent.
+      adapter: [EquirectangularAdapter, { useXmpData: false }],
       panorama: pictureUrl(item),
       sphereCorrection: displayedCorrection(item),
       defaultYaw: startYaw(item),
