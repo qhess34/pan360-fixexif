@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pan360 FixExif</title>
+  <meta name="description" content="Corrigez en WYSIWYG le pitch / roll / yaw de vos photos 360° Panoramax.">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">Pan360 <span>FixExif</span></div>
+  <form id="seqForm" class="seq-form">
+    <input id="seqInput" type="text" placeholder="URL ou identifiant de séquence Panoramax" autocomplete="off" spellcheck="false">
+    <button type="submit" class="primary">Charger</button>
+    <button type="button" id="mySeqBtn" title="Lister mes séquences (nécessite le token)">Mes séquences</button>
+  </form>
+  <button id="settingsBtn" class="icon" title="Paramètres">⚙</button>
+</header>
+
+<div id="mySeqPanel" class="panel" hidden>
+  <div class="panel-head">
+    <strong>Mes séquences</strong>
+    <button type="button" class="icon" id="mySeqClose" title="Fermer">✕</button>
+  </div>
+  <ul id="mySeqList"></ul>
+</div>
+
+<main>
+  <div id="viewer-container">
+    <div id="panorama"></div>
+    <div id="crosshair" aria-hidden="true">
+      <div class="hline"></div>
+      <div class="vline"></div>
+    </div>
+    <div id="hud">
+      <span>Vue : yaw <b id="hudYaw">0</b>° · pitch <b id="hudPitch">0</b>° · fov <b id="hudFov">0</b>°</span>
+    </div>
+    <div id="filename"></div>
+    <div id="empty" class="empty">
+      <h1>Corriger l'horizon de vos photos 360° Panoramax</h1>
+      <ol>
+        <li>Renseignez votre <b>token Panoramax</b> dans les paramètres <b>⚙</b> (uniquement nécessaire pour enregistrer).</li>
+        <li>Collez l'URL d'une séquence (ou son identifiant) puis <b>Charger</b>.</li>
+        <li>Alignez l'horizon sur la ligne rouge, appuyez sur <b>FIX</b>, puis <b>Synchroniser</b>.</li>
+      </ol>
+    </div>
+  </div>
+
+  <section class="controls" id="controls">
+    <div class="nav-row">
+      <button id="prevBtn" title="Image précédente">◀ Précédent</button>
+      <span class="counter">
+        Photo <input id="indexInput" type="number" min="1" value="1"> / <span id="total">0</span>
+      </span>
+      <button id="nextBtn" title="Image suivante">Suivant ▶</button>
+      <span class="sep"></span>
+      <button id="Turn90m">-90°</button>
+      <button id="Turn0">0°</button>
+      <button id="resetView">Reset vue</button>
+      <button id="Turn90">+90°</button>
+      <button id="Turn180">+180°</button>
+    </div>
+
+    <div class="axes">
+      <div class="axis">
+        <h3>Pitch <output id="pitchVal">0</output>°<small id="pitchOrig"></small></h3>
+        <div class="btns">
+          <button data-axis="pitch" data-step="-10">▲▲▲</button>
+          <button data-axis="pitch" data-step="-5">▲▲</button>
+          <button data-axis="pitch" data-step="-1">▲</button>
+          <button id="pitch_fix" class="fix">FIX</button>
+          <button data-reset="pitch">RESET</button>
+          <button data-axis="pitch" data-step="1">▼</button>
+          <button data-axis="pitch" data-step="5">▼▼</button>
+          <button data-axis="pitch" data-step="10">▼▼▼</button>
+        </div>
+        <input type="range" data-slider="pitch" min="-45" max="45" step="0.1" value="0">
+      </div>
+
+      <div class="axis">
+        <h3>Roll <output id="rollVal">0</output>°<small id="rollOrig"></small></h3>
+        <div class="btns">
+          <button data-axis="roll" data-step="-10">↻↻↻</button>
+          <button data-axis="roll" data-step="-5">↻↻</button>
+          <button data-axis="roll" data-step="-1">↻</button>
+          <button id="roll_fix" class="fix">FIX</button>
+          <button data-reset="roll">RESET</button>
+          <button data-axis="roll" data-step="1">↺</button>
+          <button data-axis="roll" data-step="5">↺↺</button>
+          <button data-axis="roll" data-step="10">↺↺↺</button>
+        </div>
+        <input type="range" data-slider="roll" min="-45" max="45" step="0.1" value="0">
+      </div>
+
+      <div class="axis">
+        <h3>Yaw <output id="yawVal">0</output>°<small id="yawOrig"></small></h3>
+        <div class="btns">
+          <button id="yaw_fix" class="fix">Fix heading</button>
+          <button data-reset="yaw">RESET</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="save-row">
+      <span id="status" class="status"></span>
+      <button id="revertBtn" title="Annuler les modifications de cette photo">Annuler cette photo</button>
+      <button id="saveOneBtn" title="Envoyer uniquement cette photo">Enregistrer cette photo</button>
+      <button id="syncBtn" class="primary">Synchroniser vers Panoramax (<span id="dirtyCount">0</span>)</button>
+    </div>
+
+    <details class="help">
+      <summary>Raccourcis clavier</summary>
+      <ul id="shortcutList"></ul>
+    </details>
+  </section>
+</main>
+
+<div id="loader" class="loader-overlay" hidden>
+  <div class="spinner"></div>
+  <span id="loaderText">Chargement…</span>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<dialog id="settingsDialog">
+  <form method="dialog" id="settingsForm">
+    <h2>Paramètres</h2>
+    <label>Instance Panoramax
+      <input id="setInstance" type="url" placeholder="https://panoramax.openstreetmap.fr" required>
+    </label>
+    <label>Token Panoramax
+      <span class="row">
+        <input id="setToken" type="password" autocomplete="off" spellcheck="false" placeholder="eyJhbGciOi…">
+        <button type="button" id="toggleToken" class="icon" title="Afficher / masquer">👁</button>
+      </span>
+      <small>Obtenez un token depuis votre compte Panoramax (page « Mes paramètres », section tokens),
+        ou via <code>/api/users/me/tokens</code> sur votre instance.</small>
+    </label>
+    <label class="check">
+      <input id="setRemember" type="checkbox">
+      Mémoriser le token dans ce navigateur (localStorage)
+    </label>
+    <label>Qualité d'affichage
+      <select id="setQuality">
+        <option value="sd">SD (rapide, recommandé)</option>
+        <option value="hd">HD (lourd)</option>
+      </select>
+    </label>
+    <p class="note">Tout est stocké localement dans votre navigateur. Le token n'est envoyé qu'à l'instance Panoramax configurée.</p>
+    <div class="dialog-actions">
+      <button type="button" id="clearDataBtn" class="danger">Effacer mes données locales</button>
+      <span class="sep"></span>
+      <button value="cancel" formnovalidate>Annuler</button>
+      <button value="ok" class="primary">Enregistrer</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
