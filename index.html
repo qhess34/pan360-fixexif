@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pan360 FixExif</title>
   <meta name="description" content="Corrigez en WYSIWYG le pitch / roll / yaw de vos photos 360° Panoramax.">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5.15.1/index.css">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -39,12 +39,13 @@
       <span>Vue : yaw <b id="hudYaw">0</b>° · pitch <b id="hudPitch">0</b>° · fov <b id="hudFov">0</b>°</span>
     </div>
     <div id="filename"></div>
+    <button id="fullscreenBtn" class="icon overlay-btn" title="Plein écran">⛶</button>
     <div id="empty" class="empty">
       <h1>Corriger l'horizon de vos photos 360° Panoramax</h1>
       <ol>
         <li>Renseignez votre <b>token Panoramax</b> dans les paramètres <b>⚙</b> (uniquement nécessaire pour enregistrer).</li>
         <li>Collez l'URL d'une séquence (ou son identifiant) puis <b>Charger</b>.</li>
-        <li>Alignez l'horizon sur la ligne rouge, appuyez sur <b>FIX</b>, puis <b>Synchroniser</b>.</li>
+        <li>Alignez l'horizon sur la ligne rouge, appuyez sur <b>FIX horizon</b>, puis <b>Synchroniser</b>.</li>
       </ol>
     </div>
   </div>
@@ -71,7 +72,6 @@
           <button data-axis="pitch" data-step="-10">▲▲▲</button>
           <button data-axis="pitch" data-step="-5">▲▲</button>
           <button data-axis="pitch" data-step="-1">▲</button>
-          <button id="pitch_fix" class="fix">FIX</button>
           <button data-reset="pitch">RESET</button>
           <button data-axis="pitch" data-step="1">▼</button>
           <button data-axis="pitch" data-step="5">▼▼</button>
@@ -80,13 +80,20 @@
         <input type="range" data-slider="pitch" min="-45" max="45" step="0.1" value="0">
       </div>
 
+      <div class="axis axis-fix">
+        <h3>Horizon</h3>
+        <div class="btns">
+          <button id="horizon_fix" class="fix" title="Posez l'horizon visible sur la ligne rouge (dans n'importe quelle direction), puis FIX">FIX horizon</button>
+        </div>
+        <small>Horizon sur la ligne rouge → FIX</small>
+      </div>
+
       <div class="axis">
         <h3>Roll <output id="rollVal">0</output>°<small id="rollOrig"></small></h3>
         <div class="btns">
           <button data-axis="roll" data-step="-10">↻↻↻</button>
           <button data-axis="roll" data-step="-5">↻↻</button>
           <button data-axis="roll" data-step="-1">↻</button>
-          <button id="roll_fix" class="fix">FIX</button>
           <button data-reset="roll">RESET</button>
           <button data-axis="roll" data-step="1">↺</button>
           <button data-axis="roll" data-step="5">↺↺</button>
@@ -98,7 +105,7 @@
       <div class="axis">
         <h3>Yaw <output id="yawVal">0</output>°<small id="yawOrig"></small></h3>
         <div class="btns">
-          <button id="yaw_fix" class="fix">Fix heading</button>
+          <button id="yaw_fix" class="fix" title="La direction visée devient l'avant de la photo (direction de prise de vue)">Fix heading</button>
           <button data-reset="yaw">RESET</button>
         </div>
       </div>
@@ -159,7 +166,14 @@
   </form>
 </dialog>
 
-<script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
-<script src="js/app.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+    "@photo-sphere-viewer/core": "https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5.15.1/index.module.js"
+  }
+}
+</script>
+<script type="module" src="js/app.js"></script>
 </body>
 </html>

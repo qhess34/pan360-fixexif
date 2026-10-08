@@ -280,3 +280,14 @@ dialog code { color: var(--fg); }
   #viewer-container { height: 55vh; }
   .help ul { columns: 1; }
 }
+
+.overlay-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  background: rgba(0, 0, 0, .6);
+}
+.axis-fix { display: flex; flex-direction: column; justify-content: center; }
+.axis-fix small { color: var(--muted); margin-top: 6px; }
+#filename .badge.warn { background: var(--danger); color: #fff; }
