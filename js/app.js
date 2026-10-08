@@ -1,19 +1,27 @@
 /*
  * Pan360 FixExif — correction WYSIWYG du pitch / roll / yaw des photos 360° Panoramax.
  *
- * Application 100 % statique : les photos sont lues directement depuis l'API Panoramax,
- * l'horizon est corrigé en direct dans Pannellum (horizonPitch / horizonRoll), puis les
- * nouvelles valeurs sont envoyées par PATCH sur /api/collections/{cid}/items/{id}.
+ * Application 100 % statique : les photos sont lues directement depuis l'API Panoramax et
+ * affichées avec Photo Sphere Viewer, en appliquant exactement la même correction que le
+ * viewer officiel Panoramax (sphereCorrection = {pan: yaw, tilt: -pitch, roll: roll}).
+ * Les nouvelles valeurs sont envoyées par PATCH sur /api/collections/{cid}/items/{id}.
  * Le paramétrage (instance, token) et les modifications en attente sont gardés dans le
  * stockage local du navigateur.
  */
+import { Viewer } from '@photo-sphere-viewer/core';
+import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
+
 (() => {
   'use strict';
 
   const DEFAULT_INSTANCE = 'https://panoramax.openstreetmap.fr';
   const PAGE_LIMIT = 100;
   const SYNC_DELAY_MS = 300;
-  const DEFAULT_HFOV = 120;
+  const DEFAULT_ZOOM = 0;           // 0 = champ le plus large (maxFov)
+  const MIN_FOV = 30;
+  const MAX_FOV = 90;
+  const NUDGE = 0.01;              // voir panoramaxPayload()
+  const { degToRad, radToDeg } = MathUtils;
   const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
   // ---------------------------------------------------------------------------
@@ -70,7 +78,6 @@
     items: [],      // {id, collection, sd, hd, datetime, original: {pitch, roll, yaw}}
     index: 0,
     edits: {},      // id -> {pitch, roll, yaw} (modifications non synchronisées)
-    hfov: DEFAULT_HFOV,
     busy: false,
   };
 
@@ -184,6 +191,7 @@
       sd,
       hd: (assets.hd && assets.hd.href) || sd,
       datetime: p.datetime || '',
+      is360: (p['pers:interior_orientation'] || {}).field_of_view === 360,
       original: {
         pitch: firstNumber(p['pers:pitch'], exif['Xmp.GPano.PosePitchDegrees']),
         roll: firstNumber(p['pers:roll'], exif['Xmp.GPano.PoseRollDegrees']),
@@ -227,7 +235,7 @@
       $('controls').classList.remove('disabled');
       $('total').textContent = items.length;
       $('indexInput').max = items.length;
-      showImage(Math.min(Math.max(0, startIndex), items.length - 1), { resetView: true });
+      showImage(Math.min(Math.max(0, startIndex), items.length - 1));
 
       const pending = Object.keys(state.edits).length;
       toast(`${items.length} photos chargées` + (pending ? ` — ${pending} modification(s) locale(s) restaurée(s)` : ''), 'ok');
@@ -279,42 +287,99 @@
     refreshUi();
   }
 
-  /** Applique pitch / roll à la vue en direct (sans recharger l'image). */
+  // ---------------------------------------------------------------------------
+  // Correspondance avec le viewer Panoramax
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Le viewer Panoramax n'applique la correction d'une photo 360° que si pitch ET roll sont
+   * non nuls (et, pour une photo non 360°, si l'un des deux est non nul).
+   * Copie de getSphereCorrection() de @panoramax/web-viewer.
+   */
+  function panoramaxApplies(v, is360) {
+    return (!is360 && (v.pitch !== 0 || v.roll !== 0)) || (v.pitch !== 0 && v.roll !== 0);
+  }
+
+  /** Correction effectivement affichée par Panoramax pour ces valeurs. */
+  function sphereCorrection(v, is360 = true) {
+    if (!panoramaxApplies(v, is360)) return { pan: 0, tilt: 0, roll: 0 };
+    return { pan: degToRad(v.yaw), tilt: degToRad(-v.pitch), roll: degToRad(v.roll) };
+  }
+
+  /**
+   * Valeurs envoyées à l'API : si une correction est voulue mais qu'un des deux angles vaut 0,
+   * Panoramax l'ignorerait ; on remplace ce 0 par 0,01° (invisible) pour qu'elle s'applique.
+   */
+  function panoramaxPayload(v, is360) {
+    const out = { pitch: v.pitch, roll: v.roll, yaw: v.yaw };
+    const wanted = out.pitch !== 0 || out.roll !== 0 || out.yaw !== 0;
+    if (wanted && !panoramaxApplies(out, is360)) {
+      if (out.pitch === 0) out.pitch = NUDGE;
+      if (out.roll === 0) out.roll = NUDGE;
+    }
+    return out;
+  }
+
+  /**
+   * Correction à afficher : tant qu'une photo n'est pas modifiée, on montre exactement ce que
+   * Panoramax affiche ; dès qu'elle est modifiée, ce qui sera affiché après synchronisation.
+   */
+  function displayedCorrection(item = currentItem()) {
+    const v = values(item);
+    return sphereCorrection(isDirty(item) ? panoramaxPayload(v, item.is360) : v, item.is360);
+  }
+
+  /** Applique la correction à la vue en direct (sans recharger l'image). */
   function applyPose() {
-    if (!viewer) return;
-    const v = values();
-    viewer.setHorizonPitch(v.pitch);
-    viewer.setHorizonRoll(v.roll);
+    if (!viewer || !currentItem()) return;
+    viewer.setOption('sphereCorrection', displayedCorrection());
   }
 
   // ---------------------------------------------------------------------------
   // Visionneuse
   // ---------------------------------------------------------------------------
-  function showImage(index, { resetView = false } = {}) {
+  const isAbort = e => !!e && (e.name === 'AbortError' || /abort/i.test(e.message || ''));
+
+  function pictureUrl(item) {
+    return settings.quality === 'hd' ? item.hd : item.sd;
+  }
+
+  function createViewer(item) {
+    viewer = new Viewer({
+      container: 'panorama',
+      panorama: pictureUrl(item),
+      sphereCorrection: displayedCorrection(item),
+      defaultYaw: 0,
+      defaultPitch: 0,
+      defaultZoomLvl: DEFAULT_ZOOM,
+      minFov: MIN_FOV,
+      maxFov: MAX_FOV,
+      navbar: false,
+      keyboard: false,             // les raccourcis sont gérés par l'application
+      mousewheelCtrlKey: false,
+      loadingTxt: 'Chargement…',
+    });
+    viewer.addEventListener('panorama-error', e => {
+      if (!isAbort(e.error)) toast('Erreur d\'affichage : ' + (e.error && e.error.message || e.error), 'err', 8000);
+    });
+  }
+
+  function showImage(index) {
     const item = state.items[index];
     if (!item) return;
-    if (viewer) {
-      state.hfov = viewer.getHfov();
-      viewer.destroy();
-    }
     state.index = index;
-    const v = values(item);
-    viewer = pannellum.viewer('panorama', {
-      type: 'equirectangular',
-      panorama: settings.quality === 'hd' ? item.hd : item.sd,
-      autoLoad: true,
-      crossOrigin: 'anonymous',
-      ignoreGPanoXMP: true,       // les valeurs viennent de l'API / des modifications locales
-      horizonPitch: v.pitch,
-      horizonRoll: v.roll,
-      pitch: 0,
-      yaw: norm180(v.yaw),
-      hfov: resetView ? DEFAULT_HFOV : state.hfov,
-      showControls: true,
-      disableKeyboardCtrl: true,  // les raccourcis sont gérés par l'application
-      strings: { loadingLabel: 'Chargement…' },
-    });
-    viewer.on('error', msg => toast('Erreur d\'affichage : ' + msg, 'err', 8000));
+    if (!viewer) {
+      createViewer(item);
+    } else {
+      viewer.setPanorama(pictureUrl(item), {
+        sphereCorrection: displayedCorrection(item),
+        position: { yaw: 0, pitch: 0 },
+        transition: false,
+        showLoader: true,
+      }).then(() => applyPose()).catch(e => {
+        if (!isAbort(e)) toast('Erreur d\'affichage : ' + e.message, 'err', 8000);
+      });
+    }
 
     preload(index + 1);
     preload(index - 1);
@@ -325,9 +390,7 @@
   function preload(index) {
     const item = state.items[index];
     if (!item) return;
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.src = settings.quality === 'hd' ? item.hd : item.sd;
+    fetch(pictureUrl(item), { mode: 'cors' }).catch(() => { /* simple préchargement */ });
   }
 
   function go(delta) {
@@ -336,48 +399,61 @@
     showImage(((state.index + delta) % n + n) % n);
   }
 
-  function lookAt(yaw) {
+  /** Oriente la vue (angle relatif à l'avant de la photo, comme dans Panoramax). */
+  function lookAt(yawDeg) {
     if (!viewer) return;
-    viewer.setPitch(0);
-    viewer.setYaw(norm180(yaw));
+    viewer.rotate({ yaw: degToRad(yawDeg), pitch: 0 });
   }
 
   function resetView() {
     if (!viewer) return;
-    viewer.setYaw(norm180(values().yaw));
-    viewer.setPitch(0);
-    viewer.setHfov(DEFAULT_HFOV);
+    viewer.rotate({ yaw: 0, pitch: 0 });
+    viewer.zoom(DEFAULT_ZOOM);
   }
 
   // ---------------------------------------------------------------------------
-  // Corrections (logique reprise de la version PHP)
+  // Corrections
   // ---------------------------------------------------------------------------
 
-  /** L'horizon visible est placé sur la ligne rouge en regardant vers l'avant ou l'arrière. */
-  function fixPitch() {
-    if (!viewer) return;
-    const viewPitch = viewer.getPitch();
-    const viewYaw = viewer.getYaw();
-    if (!viewPitch) return;
-    const front = viewYaw > -90 && viewYaw < 90;
-    setValues({ pitch: values().pitch + (front ? -viewPitch : viewPitch) });
-    viewer.setPitch(0, false);
+  /** Rotation de la sphère actuellement affichée (identique au renderer Photo Sphere Viewer). */
+  function currentRotation() {
+    const c = displayedCorrection();
+    return new Quaternion().setFromEuler(new Euler(c.tilt, c.pan, c.roll, 'YXZ'));
   }
 
-  /** L'horizon visible est placé sur la ligne rouge en regardant à gauche ou à droite. */
-  function fixRoll() {
-    if (!viewer) return;
-    const viewPitch = viewer.getPitch();
-    const viewYaw = viewer.getYaw();
-    if (!viewPitch) return;
-    setValues({ roll: values().roll + (viewYaw < 0 ? -viewPitch : viewPitch) });
-    viewer.setPitch(0, false);
+  /** Applique une rotation monde supplémentaire et en déduit les nouveaux pitch / roll / yaw. */
+  function composeRotation(extra) {
+    const e = new Euler().setFromQuaternion(extra.multiply(currentRotation()), 'YXZ');
+    setValues({ pitch: -radToDeg(e.x), yaw: radToDeg(e.y), roll: radToDeg(e.z) });
   }
 
-  /** La direction actuellement visée devient le cap (yaw) de la photo. */
+  /**
+   * L'utilisateur a posé l'horizon réel sur la ligne rouge (centre de l'écran), dans n'importe
+   * quelle direction : on fait basculer la sphère autour de l'axe horizontal perpendiculaire
+   * à la vue pour ramener ce point à l'horizon (pitch 0).
+   */
+  function fixHorizon() {
+    if (!viewer) return;
+    const pos = viewer.getPosition();
+    if (Math.abs(pos.pitch) < 1e-5) return;
+    const dh = viewer.dataHelper;
+    const from = dh.sphericalCoordsToVector3(pos).normalize();
+    const to = dh.sphericalCoordsToVector3({ yaw: pos.yaw, pitch: 0 }).normalize();
+    composeRotation(new Quaternion().setFromUnitVectors(from, to));
+    viewer.rotate({ yaw: pos.yaw, pitch: 0 });
+  }
+
+  /** La direction visée devient l'avant de la photo (yaw 0 dans Panoramax). */
   function fixYaw() {
     if (!viewer) return;
-    setValues({ yaw: viewer.getYaw() });
+    const pos = viewer.getPosition();
+    const dh = viewer.dataHelper;
+    const from = dh.sphericalCoordsToVector3({ yaw: pos.yaw, pitch: 0 }).normalize();
+    const to = dh.sphericalCoordsToVector3({ yaw: 0, pitch: 0 }).normalize();
+    const up = new Vector3(0, 1, 0);
+    const angle = Math.atan2(new Vector3().crossVectors(from, to).dot(up), from.dot(to));
+    composeRotation(new Quaternion().setFromAxisAngle(up, angle));
+    viewer.rotate({ yaw: 0, pitch: pos.pitch });
   }
 
   function step(axis, delta) {
@@ -406,11 +482,11 @@
     const res = await apiFetch(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pitch: v.pitch, roll: v.roll, yaw: v.yaw }),
+      body: JSON.stringify(panoramaxPayload(v, item.is360)),
     });
     // On repart des valeurs renvoyées par l'API si elles sont présentes.
     const updated = res && res.properties ? featureToItem(Object.assign({ assets: {} }, res)).original : null;
-    item.original = updated && res.properties['pers:pitch'] !== undefined ? updated : { ...v };
+    item.original = updated && res.properties['pers:pitch'] !== undefined ? updated : panoramaxPayload(v, item.is360);
     delete state.edits[item.id];
   }
 
@@ -537,6 +613,13 @@
       badge.className = 'badge';
       badge.textContent = 'modifiée';
       label.appendChild(badge);
+    } else if ((v.pitch || v.roll || v.yaw) && !panoramaxApplies(v, item.is360)) {
+      const badge = document.createElement('span');
+      badge.className = 'badge warn';
+      badge.textContent = 'valeurs ignorées par Panoramax';
+      badge.title = 'Panoramax n\'applique la correction que si pitch et roll sont tous deux non nuls. '
+        + 'Toute modification enregistrée ici sera envoyée de façon à être appliquée.';
+      label.appendChild(badge);
     }
 
     const status = $('status');
@@ -547,9 +630,10 @@
   function updateHud() {
     if (viewer) {
       try {
-        $('hudYaw').textContent = viewer.getYaw().toFixed(1);
-        $('hudPitch').textContent = viewer.getPitch().toFixed(1);
-        $('hudFov').textContent = viewer.getHfov().toFixed(0);
+        const pos = viewer.getPosition();
+        $('hudYaw').textContent = norm180(radToDeg(pos.yaw)).toFixed(1);
+        $('hudPitch').textContent = radToDeg(pos.pitch).toFixed(1);
+        $('hudFov').textContent = viewer.state.hFov.toFixed(0);
       } catch (e) { /* visionneuse en cours de chargement */ }
     }
     requestAnimationFrame(updateHud);
@@ -632,9 +716,13 @@
   $('Turn180').onclick = () => lookAt(180);
   $('resetView').onclick = resetView;
 
-  $('pitch_fix').onclick = fixPitch;
-  $('roll_fix').onclick = fixRoll;
+  $('horizon_fix').onclick = fixHorizon;
   $('yaw_fix').onclick = fixYaw;
+  $('fullscreenBtn').onclick = () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else $('viewer-container').requestFullscreen().catch(() => { /* refusé */ });
+  };
+  document.addEventListener('fullscreenchange', () => { if (viewer) viewer.autoSize(); });
   document.querySelectorAll('[data-axis]').forEach(b => {
     b.onclick = () => step(b.dataset.axis, Number(b.dataset.step));
   });
@@ -651,9 +739,9 @@
 
   // --- Raccourcis clavier (positions physiques, comme la version PHP) ---
   const SHORTCUTS = [
-    { code: 'KeyQ', azerty: 'A', label: 'FIX pitch (horizon visible)', run: fixPitch },
-    { code: 'KeyW', azerty: 'Z', label: 'FIX roll (horizon visible)', run: fixRoll },
-    { code: 'KeyE', azerty: 'E', label: 'Fix heading (yaw visible)', run: fixYaw },
+    { code: 'KeyQ', azerty: 'A', label: 'FIX horizon (horizon sur la ligne rouge)', run: fixHorizon },
+    { code: 'KeyW', azerty: 'Z', label: 'FIX horizon (idem)', run: fixHorizon },
+    { code: 'KeyE', azerty: 'E', label: 'Fix heading (la direction visée devient l\'avant)', run: fixYaw },
     { code: 'KeyA', azerty: 'Q', label: 'Rotation -90°', run: () => lookAt(-90) },
     { code: 'KeyS', azerty: 'S', label: 'Rotation 0°', run: () => lookAt(0) },
     { code: 'KeyD', azerty: 'D', label: 'Rotation +90°', run: () => lookAt(90) },
@@ -664,11 +752,17 @@
     { code: 'KeyV', azerty: 'V', label: 'Synchroniser vers Panoramax', run: () => sync(state.items) },
     { code: 'PageUp', azerty: 'PgUp', label: 'Image précédente', run: () => go(-1) },
     { code: 'PageDown', azerty: 'PgDn', label: 'Image suivante', run: () => go(1) },
-    { code: 'ArrowLeft', azerty: '←', label: 'Tourner la vue à gauche', run: () => viewer && viewer.setYaw(viewer.getYaw() - 5, false) },
-    { code: 'ArrowRight', azerty: '→', label: 'Tourner la vue à droite', run: () => viewer && viewer.setYaw(viewer.getYaw() + 5, false) },
-    { code: 'ArrowUp', azerty: '↑', label: 'Regarder plus haut', run: () => viewer && viewer.setPitch(viewer.getPitch() + 1, false) },
-    { code: 'ArrowDown', azerty: '↓', label: 'Regarder plus bas', run: () => viewer && viewer.setPitch(viewer.getPitch() - 1, false) },
+    { code: 'ArrowLeft', azerty: '←', label: 'Tourner la vue à gauche', run: () => nudgeView(-5, 0) },
+    { code: 'ArrowRight', azerty: '→', label: 'Tourner la vue à droite', run: () => nudgeView(5, 0) },
+    { code: 'ArrowUp', azerty: '↑', label: 'Regarder plus haut (0,2°)', run: () => nudgeView(0, 0.2) },
+    { code: 'ArrowDown', azerty: '↓', label: 'Regarder plus bas (0,2°)', run: () => nudgeView(0, -0.2) },
   ];
+  function nudgeView(dYaw, dPitch) {
+    if (!viewer) return;
+    const pos = viewer.getPosition();
+    viewer.rotate({ yaw: pos.yaw + degToRad(dYaw), pitch: pos.pitch + degToRad(dPitch) });
+  }
+
   const shortcutByCode = Object.fromEntries(SHORTCUTS.map(s => [s.code, s]));
 
   document.addEventListener('keydown', e => {
