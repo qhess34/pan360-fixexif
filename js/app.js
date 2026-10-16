@@ -53,6 +53,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     instance: store.get('instance', DEFAULT_INSTANCE),
     remember: store.get('remember', false),
     quality: store.get('quality', 'sd'),
+    quad: store.get('quad', false),
     token: store.get('token', '') || store.get('token', '', sessionStorage),
   };
 
@@ -60,6 +61,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     store.set('instance', settings.instance);
     store.set('remember', settings.remember);
     store.set('quality', settings.quality);
+    store.set('quad', settings.quad);
     if (settings.remember) {
       store.set('token', settings.token);
       store.del('token', sessionStorage);
@@ -78,6 +80,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     items: [],      // {id, collection, sd, hd, datetime, original: {pitch, roll, yaw}}
     index: 0,
     edits: {},      // id -> {pitch, roll, yaw} (modifications non synchronisées)
+    synced: new Set(), // photos envoyées pendant cette session
     busy: false,
   };
 
@@ -190,6 +193,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
       collection: feature.collection,
       sd,
       hd: (assets.hd && assets.hd.href) || sd,
+      thumb: (assets.thumb && assets.thumb.href) || sd,
       datetime: p.datetime || '',
       gps: (feature.geometry && feature.geometry.coordinates) || null,
       azimuth: firstNumber(p['view:azimuth'], exif['Exif.GPSInfo.GPSImgDirection']),
@@ -253,6 +257,10 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
       store.set('lastSequence', { instance, collectionId });
       $('seqInput').value = collectionId;
       $('empty').hidden = true;
+      $('sequencePanel').hidden = false;
+      $('chartPanel').hidden = false;
+      state.synced = new Set();
+      buildStrip();
       $('controls').classList.remove('disabled');
       $('total').textContent = items.length;
       $('indexInput').max = items.length;
@@ -354,6 +362,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   function applyPose() {
     if (!viewer || !currentItem()) return;
     viewer.setOption('sphereCorrection', displayedCorrection());
+    quadApplyPose();
   }
 
   // ---------------------------------------------------------------------------
@@ -388,6 +397,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
       mousewheelCtrlKey: false,
       loadingTxt: 'Chargement…',
     });
+    viewer.addEventListener('click', e => onViewerClick(e.data));
     viewer.addEventListener('panorama-error', e => {
       if (!isAbort(e.error)) toast('Erreur d\'affichage : ' + (e.error && e.error.message || e.error), 'err', 8000);
     });
@@ -397,6 +407,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     const item = state.items[index];
     if (!item) return;
     state.index = index;
+    clearMarks();
     if (!viewer) {
       createViewer(item);
     } else {
@@ -410,9 +421,11 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
       });
     }
 
+    quadShow(item);
     preload(index + 1);
     preload(index - 1);
     refreshUi();
+    scrollStripToCurrent();
     updateHash();
   }
 
@@ -503,6 +516,363 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   }
 
   // ---------------------------------------------------------------------------
+  // Repères cliqués : points d'horizon / lignes verticales
+  // ---------------------------------------------------------------------------
+  // Chaque repère est stocké dans le repère de l'image (indépendant de la correction en cours),
+  // puis converti dans le repère affiché au moment du calcul. On cherche la verticale réelle u :
+  //  - un point de l'horizon réel p vérifie u·p = 0 ;
+  //  - une ligne verticale (a, b) est dans un plan qui contient u : u·(a×b) = 0.
+  // u est obtenu par projections successives (moindres carrés), puis la sphère est tournée
+  // de la plus petite rotation qui amène u sur la verticale de l'écran.
+  const marks = { mode: null, points: [], lines: [], pending: null };
+  const UP = new Vector3(0, 1, 0);
+
+  const toLocal = world => world.clone().applyQuaternion(currentRotation().invert());
+  const toWorld = local => local.clone().applyQuaternion(currentRotation());
+
+  function setMarkMode(mode) {
+    if (!viewer) return;
+    marks.mode = marks.mode === mode ? null : mode;
+    marks.pending = null;
+    updateMarkUi();
+  }
+
+  function clearMarks() {
+    marks.points = [];
+    marks.lines = [];
+    marks.pending = null;
+    updateMarkUi();
+  }
+
+  function onViewerClick(data) {
+    if (!marks.mode || data.rightclick) return;
+    const local = toLocal(viewer.dataHelper.sphericalCoordsToVector3({ yaw: data.yaw, pitch: data.pitch }).normalize());
+    if (marks.mode === 'horizon') {
+      marks.points.push(local);
+      if (marks.points.length >= 2) solveLevel();
+    } else if (!marks.pending) {
+      marks.pending = local;
+    } else {
+      if (marks.pending.angleTo(local) > degToRad(1)) {
+        marks.lines.push([marks.pending, local]);
+        solveLevel();
+      }
+      marks.pending = null;
+    }
+    updateMarkUi();
+  }
+
+  function solveLevel() {
+    const constraints = [
+      ...marks.points.map(toWorld),
+      ...marks.lines.map(([a, b]) => new Vector3().crossVectors(toWorld(a), toWorld(b)).normalize()),
+    ];
+    if (!constraints.length) return;
+    const u = UP.clone();
+    for (let it = 0; it < 200; it++) {
+      for (const c of constraints) u.addScaledVector(c, -u.dot(c)).normalize();
+    }
+    if (u.dot(UP) < 0) u.negate();
+    if (u.angleTo(UP) < 1e-6) return;
+    composeRotation(new Quaternion().setFromUnitVectors(u, UP));
+  }
+
+  function updateMarkUi() {
+    $('markHorizonBtn').classList.toggle('active', marks.mode === 'horizon');
+    $('markVerticalBtn').classList.toggle('active', marks.mode === 'vertical');
+    $('viewer-container').classList.toggle('marking', !!marks.mode);
+    const hint = $('markHint');
+    if (marks.mode === 'horizon') {
+      const n = marks.points.length;
+      hint.textContent = `Points d'horizon : cliquez des points de l'horizon réel, éloignés d'au moins 90° `
+        + `(${n} placé${n > 1 ? 's' : ''}${n < 2 ? ', 2 minimum' : ''}). Échap pour terminer.`;
+    } else if (marks.mode === 'vertical') {
+      const n = marks.lines.length;
+      hint.textContent = (marks.pending ? 'Cliquez le bas de la verticale. ' : 'Cliquez le haut d\'un élément vertical (poteau, angle de mur). ')
+        + `${n} verticale${n > 1 ? 's' : ''} — 2 dans des directions différentes pour un résultat complet. Échap pour terminer.`;
+    }
+    hint.hidden = !marks.mode;
+  }
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  function svgEl(tag, attrs, parent) {
+    const el = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    if (parent) parent.appendChild(el);
+    return el;
+  }
+
+  /** Position écran d'un repère, ou null s'il n'est pas visible. */
+  function markToScreen(local) {
+    const pos = viewer.dataHelper.vector3ToSphericalCoords(toWorld(local).multiplyScalar(10));
+    if (!viewer.dataHelper.isPointVisible(pos)) return null;
+    return viewer.dataHelper.sphericalCoordsToViewerCoords(pos);
+  }
+
+  function drawMarks() {
+    const layer = $('marksLayer');
+    const has = marks.points.length || marks.lines.length || marks.pending;
+    if (!has) {
+      if (layer.firstChild) layer.replaceChildren();
+      return;
+    }
+    layer.replaceChildren();
+    for (const [a, b] of marks.lines) {
+      // Arc de grand cercle entre les deux points (interrompu là où il sort de l'écran)
+      let d = '';
+      let pen = false;
+      for (let i = 0; i <= 24; i++) {
+        const p = markToScreen(a.clone().lerp(b, i / 24).normalize());
+        if (p) d += `${pen ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+        pen = !!p;
+      }
+      if (d) svgEl('path', { d, class: 'mk-line' }, layer);
+      for (const v of [a, b]) {
+        const p = markToScreen(v);
+        if (p) svgEl('circle', { cx: p.x, cy: p.y, r: 5, class: 'mk-pt' }, layer);
+      }
+    }
+    for (const v of marks.points) {
+      const p = markToScreen(v);
+      if (p) svgEl('circle', { cx: p.x, cy: p.y, r: 5, class: 'mk-pt' }, layer);
+    }
+    if (marks.pending) {
+      const p = markToScreen(marks.pending);
+      if (p) svgEl('circle', { cx: p.x, cy: p.y, r: 5, class: 'mk-pt pending' }, layer);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Vue 4 directions (optionnelle)
+  // ---------------------------------------------------------------------------
+  const quad = { viewers: [] };
+
+  function quadCells() { return [...document.querySelectorAll('.quad-cell')]; }
+
+  function setQuad(enabled) {
+    settings.quad = enabled;
+    saveSettings();
+    $('quadBtn').classList.toggle('active', enabled);
+    document.body.classList.toggle('quad-on', enabled && !!state.items.length);
+    $('quad').hidden = !(enabled && state.items.length);
+    if (!enabled) {
+      quad.viewers.forEach(v => v.destroy());
+      quad.viewers = [];
+    } else if (currentItem()) {
+      quadShow(currentItem());
+    }
+    if (viewer) setTimeout(() => viewer.autoSize(), 0);
+  }
+
+  function quadShow(item) {
+    if (!settings.quad || !item) return;
+    $('quad').hidden = false;
+    document.body.classList.add('quad-on');
+    const cells = quadCells();
+    cells.forEach((cell, i) => {
+      const yaw = startYaw(item) + degToRad(Number(cell.dataset.dir));
+      if (!quad.viewers[i]) {
+        quad.viewers[i] = new Viewer({
+          container: cell.querySelector('.quad-view'),
+          adapter: [EquirectangularAdapter, { useXmpData: false }],
+          panorama: pictureUrl(item),
+          sphereCorrection: displayedCorrection(item),
+          defaultYaw: yaw,
+          defaultPitch: 0,
+          defaultZoomLvl: 40,
+          minFov: MIN_FOV,
+          maxFov: MAX_FOV,
+          navbar: false,
+          keyboard: false,
+          mousemove: false,
+          mousewheel: false,
+          loadingTxt: '',
+        });
+      } else {
+        quad.viewers[i].setPanorama(pictureUrl(item), {
+          sphereCorrection: displayedCorrection(item),
+          position: { yaw, pitch: 0 },
+          transition: false,
+          showLoader: false,
+        }).catch(e => { if (!isAbort(e)) console.warn(e); });
+      }
+    });
+  }
+
+  function quadApplyPose() {
+    if (!quad.viewers.length || !currentItem()) return;
+    const c = displayedCorrection();
+    quad.viewers.forEach(v => v.setOption('sphereCorrection', c));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Bande de miniatures & navigation par statut
+  // ---------------------------------------------------------------------------
+  const STATUS_LABEL = {
+    pending: 'modifiée, en attente d\'envoi',
+    synced: 'synchronisée',
+    corrected: 'déjà corrigée sur Panoramax',
+    ignored: 'valeurs ignorées par Panoramax',
+    raw: 'non corrigée',
+  };
+
+  function itemStatus(item) {
+    if (isDirty(item)) return 'pending';
+    if (state.synced.has(item.id)) return 'synced';
+    const o = item.original;
+    if (o.pitch || o.roll || o.yaw) return panoramaxApplies(o, item.is360) ? 'corrected' : 'ignored';
+    return 'raw';
+  }
+
+  function buildStrip() {
+    const strip = $('strip');
+    strip.replaceChildren();
+    state.items.forEach((item, i) => {
+      const b = document.createElement('button');
+      b.className = 'thumb';
+      b.setAttribute('role', 'listitem');
+      b.dataset.i = i;
+      const img = document.createElement('img');
+      img.loading = 'lazy';
+      img.alt = '';
+      img.src = item.thumb;
+      const n = document.createElement('span');
+      n.className = 'n';
+      n.textContent = i + 1;
+      b.append(img, n);
+      b.onclick = () => showImage(i);
+      strip.appendChild(b);
+    });
+    updateStrip();
+  }
+
+  function updateStrip() {
+    const thumbs = $('strip').children;
+    state.items.forEach((item, i) => {
+      const t = thumbs[i];
+      if (!t) return;
+      const st = itemStatus(item);
+      const cls = `thumb st-${st}${i === state.index ? ' current' : ''}`;
+      if (t.className !== cls) t.className = cls;
+      t.title = `Photo ${i + 1} — ${STATUS_LABEL[st]}`;
+    });
+  }
+
+  function scrollStripToCurrent() {
+    const t = $('strip').children[state.index];
+    if (!t) return;
+    const strip = $('strip');
+    strip.scrollTo({ left: t.offsetLeft - strip.clientWidth / 2 + t.clientWidth / 2, behavior: 'smooth' });
+  }
+
+  function goToNext(predicate, emptyMessage) {
+    const n = state.items.length;
+    for (let k = 1; k <= n; k++) {
+      const i = (state.index + k) % n;
+      if (predicate(state.items[i])) { showImage(i); return; }
+    }
+    toast(emptyMessage);
+  }
+  const nextRaw = () => goToNext(it => ['raw', 'ignored'].includes(itemStatus(it)), 'Aucune autre photo non corrigée.');
+  const nextDirty = () => goToNext(isDirty, 'Aucune autre photo modifiée en attente.');
+
+  // ---------------------------------------------------------------------------
+  // Courbe pitch / roll de la séquence
+  // ---------------------------------------------------------------------------
+  const chart = { scheduled: false, hover: null, geom: null };
+
+  function scheduleChart() {
+    if (chart.scheduled) return;
+    chart.scheduled = true;
+    requestAnimationFrame(() => { chart.scheduled = false; drawChart(); });
+  }
+
+  function niceStep(max) {
+    for (const s of [1, 2, 5, 10, 15, 30, 45]) if (max / s <= 4) return s;
+    return 90;
+  }
+
+  function drawChart() {
+    const svg = $('chart');
+    if ($('chartPanel').hidden || !$('chartPanel').open || !state.items.length) return;
+    const W = svg.clientWidth;
+    const H = svg.clientHeight;
+    if (!W) return;
+    const m = { l: 34, r: 44, t: 8, b: 8 };
+    const vals = state.items.map(it => values(it));
+    const maxAbs = Math.max(2, ...vals.map(v => Math.max(Math.abs(v.pitch), Math.abs(v.roll))));
+    const stepY = niceStep(maxAbs);
+    const lim = Math.ceil(maxAbs / stepY) * stepY;
+    const n = state.items.length;
+    const x = i => m.l + (n === 1 ? 0.5 : i / (n - 1)) * (W - m.l - m.r);
+    const y = v => m.t + (1 - (v + lim) / (2 * lim)) * (H - m.t - m.b);
+    chart.geom = { x, y, m, W, H, n };
+
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.replaceChildren();
+    for (let v = -lim; v <= lim + 1e-9; v += stepY) {
+      svgEl('line', { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), class: v === 0 ? 'zero' : 'grid' }, svg);
+      svgEl('text', { x: m.l - 6, y: y(v) + 4, 'text-anchor': 'end', class: 'tick' }, svg).textContent = `${v}°`;
+    }
+    const path = key => vals.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v[key]).toFixed(1)}`).join('');
+    svgEl('path', { d: path('pitch'), class: 's-pitch' }, svg);
+    svgEl('path', { d: path('roll'), class: 's-roll' }, svg);
+    // Étiquettes directes en bout de courbe (décalées si elles se chevauchent)
+    const last = vals[n - 1];
+    let yp = y(last.pitch), yr = y(last.roll);
+    if (Math.abs(yp - yr) < 13) { const mid = (yp + yr) / 2, up = last.pitch >= last.roll; yp = mid + (up ? -7 : 7); yr = mid + (up ? 7 : -7); }
+    svgEl('text', { x: W - m.r + 6, y: yp + 4, class: 'lbl' }, svg).textContent = 'Pitch';
+    svgEl('text', { x: W - m.r + 6, y: yr + 4, class: 'lbl' }, svg).textContent = 'Roll';
+    // Photo courante
+    svgEl('line', { x1: x(state.index), x2: x(state.index), y1: m.t, y2: H - m.b, class: 'cur' }, svg);
+    if (chart.hover !== null) drawChartHover(chart.hover);
+  }
+
+  function chartIndexAt(clientX) {
+    const g = chart.geom;
+    if (!g) return null;
+    const rect = $('chart').getBoundingClientRect();
+    const t = (clientX - rect.left - g.m.l) / (g.W - g.m.l - g.m.r);
+    return Math.max(0, Math.min(g.n - 1, Math.round(t * (g.n - 1))));
+  }
+
+  function drawChartHover(i) {
+    const svg = $('chart');
+    const g = chart.geom;
+    svg.querySelectorAll('.hv').forEach(e => e.remove());
+    const v = values(state.items[i]);
+    svgEl('line', { x1: g.x(i), x2: g.x(i), y1: g.m.t, y2: g.H - g.m.b, class: 'hover hv' }, svg);
+    svgEl('circle', { cx: g.x(i), cy: g.y(v.pitch), r: 4, class: 'dot-pitch hv' }, svg);
+    svgEl('circle', { cx: g.x(i), cy: g.y(v.roll), r: 4, class: 'dot-roll hv' }, svg);
+    const tip = $('chartTip');
+    tip.innerHTML = '';
+    const head = document.createElement('b');
+    head.textContent = `Photo ${i + 1}`;
+    tip.append(head, ` · pitch ${fmt(v.pitch)}° · roll ${fmt(v.roll)}° · ${STATUS_LABEL[itemStatus(state.items[i])]}`);
+    tip.hidden = false;
+    const left = Math.min(Math.max(0, g.x(i) + 10), g.W - tip.offsetWidth);
+    tip.style.left = `${left}px`;
+  }
+
+  $('chart').addEventListener('pointermove', e => {
+    const i = chartIndexAt(e.clientX);
+    if (i === null) return;
+    chart.hover = i;
+    drawChartHover(i);
+  });
+  $('chart').addEventListener('pointerleave', () => {
+    chart.hover = null;
+    $('chartTip').hidden = true;
+    $('chart').querySelectorAll('.hv').forEach(e => e.remove());
+  });
+  $('chart').addEventListener('click', e => {
+    const i = chartIndexAt(e.clientX);
+    if (i !== null) showImage(i);
+  });
+  $('chartPanel').addEventListener('toggle', scheduleChart);
+  window.addEventListener('resize', scheduleChart);
+
+  // ---------------------------------------------------------------------------
   // Synchronisation vers Panoramax
   // ---------------------------------------------------------------------------
   async function patchItem(item) {
@@ -517,6 +887,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     const updated = res && res.properties ? featureToItem(Object.assign({ assets: {} }, res)).original : null;
     item.original = updated && res.properties['pers:pitch'] !== undefined ? updated : panoramaxPayload(v, item.is360);
     delete state.edits[item.id];
+    state.synced.add(item.id);
   }
 
   async function sync(items) {
@@ -618,6 +989,8 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   function refreshUi() {
     const item = currentItem();
     const dirtyCount = state.items.filter(isDirty).length;
+    updateStrip();
+    scheduleChart();
     $('dirtyCount').textContent = dirtyCount;
     $('syncBtn').disabled = !dirtyCount;
     if (!item) return;
@@ -670,6 +1043,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
         $('hudPitch').textContent = radToDeg(pos.pitch).toFixed(1);
         $('hudFov').textContent = viewer.state.hFov.toFixed(0);
       } catch (e) { /* visionneuse en cours de chargement */ }
+      drawMarks();
     }
     requestAnimationFrame(updateHud);
   }
@@ -752,6 +1126,13 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   $('resetView').onclick = resetView;
 
   $('horizon_fix').onclick = fixHorizon;
+  $('markHorizonBtn').onclick = () => setMarkMode('horizon');
+  $('markVerticalBtn').onclick = () => setMarkMode('vertical');
+  $('clearMarksBtn').onclick = clearMarks;
+  $('quadBtn').onclick = () => setQuad(!settings.quad);
+  quadCells().forEach(cell => { cell.onclick = () => lookAt(Number(cell.dataset.dir)); });
+  $('nextRawBtn').onclick = nextRaw;
+  $('nextDirtyBtn').onclick = nextDirty;
   $('yaw_fix').onclick = fixYaw;
   $('fullscreenBtn').onclick = () => {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -778,6 +1159,9 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   const SHORTCUTS = [
     { code: 'KeyQ', azerty: 'A', label: 'FIX horizon (horizon sur la ligne rouge)', run: fixHorizon },
     { code: 'KeyW', azerty: 'Z', label: 'FIX horizon (idem)', run: fixHorizon },
+    { code: 'KeyH', azerty: 'H', label: 'Mode points d\'horizon', run: () => setMarkMode('horizon') },
+    { code: 'KeyJ', azerty: 'J', label: 'Mode verticales', run: () => setMarkMode('vertical') },
+    { code: 'Escape', azerty: 'Échap', label: 'Quitter le mode repères', run: () => { if (marks.mode) setMarkMode(marks.mode); } },
     { code: 'KeyE', azerty: 'E', label: 'Fix heading (la direction visée devient la vue d\'ouverture)', run: fixYaw },
     { code: 'KeyA', azerty: 'Q', label: 'Rotation -90°', run: () => lookAt(-90) },
     { code: 'KeyS', azerty: 'S', label: 'Rotation 0°', run: () => lookAt(0) },
@@ -786,6 +1170,9 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     { code: 'KeyZ', azerty: 'W', label: 'Image précédente', run: () => go(-1) },
     { code: 'KeyX', azerty: 'X', label: 'Vue par défaut', run: resetView },
     { code: 'KeyC', azerty: 'C', label: 'Image suivante', run: () => go(1) },
+    { code: 'KeyN', azerty: 'N', label: 'Photo non corrigée suivante', run: nextRaw },
+    { code: 'Semicolon', azerty: 'M', label: 'Photo modifiée suivante', run: nextDirty },
+    { code: 'KeyG', azerty: 'G', label: 'Vue 4 directions', run: () => setQuad(!settings.quad) },
     { code: 'KeyO', azerty: 'O', label: 'Ouvrir la photo dans Panoramax', run: () => window.open(panoramaxPictureUrl(), '_blank', 'noopener') },
     { code: 'KeyV', azerty: 'V', label: 'Synchroniser vers Panoramax', run: () => sync(state.items) },
     { code: 'PageUp', azerty: 'PgUp', label: 'Image précédente', run: () => go(-1) },
@@ -846,6 +1233,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   // ---------------------------------------------------------------------------
   function init() {
     $('controls').classList.add('disabled');
+    $('quadBtn').classList.toggle('active', settings.quad);
     renderShortcuts();
     refreshUi();
     requestAnimationFrame(updateHud);

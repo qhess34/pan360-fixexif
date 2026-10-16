@@ -6,7 +6,7 @@
   <title>Pan360 FixExif</title>
   <meta name="description" content="Corrigez en WYSIWYG le pitch / roll / yaw de vos photos 360° Panoramax.">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5.15.1/index.css">
-  <link rel="stylesheet" href="css/style.css?v=6">
+  <link rel="stylesheet" href="css/style.css?v=7">
 </head>
 <body>
 
@@ -38,6 +38,8 @@
     <div id="hud">
       <span>Vue : yaw <b id="hudYaw">0</b>° · pitch <b id="hudPitch">0</b>° · fov <b id="hudFov">0</b>°</span>
     </div>
+    <svg id="marksLayer" aria-hidden="true"></svg>
+    <div id="markHint" class="mark-hint" hidden></div>
     <div id="filename"></div>
     <button id="fullscreenBtn" class="icon overlay-btn" title="Plein écran">⛶</button>
     <div id="empty" class="empty">
@@ -49,6 +51,29 @@
       </ol>
     </div>
   </div>
+
+  <div id="quad" class="quad" hidden>
+    <div class="quad-cell" data-dir="0"><div class="quad-view"></div><div class="quad-line"></div><span class="quad-label">Avant</span></div>
+    <div class="quad-cell" data-dir="90"><div class="quad-view"></div><div class="quad-line"></div><span class="quad-label">Droite</span></div>
+    <div class="quad-cell" data-dir="180"><div class="quad-view"></div><div class="quad-line"></div><span class="quad-label">Arrière</span></div>
+    <div class="quad-cell" data-dir="-90"><div class="quad-view"></div><div class="quad-line"></div><span class="quad-label">Gauche</span></div>
+  </div>
+
+  <section class="sequence" id="sequencePanel" hidden>
+    <div class="strip-head">
+      <span class="legend">
+        <span class="lg lg-pending">en attente</span>
+        <span class="lg lg-synced">synchronisée</span>
+        <span class="lg lg-corrected">déjà corrigée</span>
+        <span class="lg lg-ignored">ignorée par Panoramax</span>
+        <span class="lg lg-raw">non corrigée</span>
+      </span>
+      <span class="sep"></span>
+      <button id="nextRawBtn" title="Aller à la prochaine photo non corrigée (N)">Non corrigée suivante ⏭</button>
+      <button id="nextDirtyBtn" title="Aller à la prochaine photo modifiée non envoyée (M)">Modifiée suivante ⏭</button>
+    </div>
+    <div id="strip" class="strip" role="list"></div>
+  </section>
 
   <section class="controls" id="controls">
     <div class="nav-row">
@@ -64,6 +89,7 @@
       <button id="Turn90">+90°</button>
       <button id="Turn180">+180°</button>
       <span class="sep"></span>
+      <button id="quadBtn" class="toggle" title="Afficher l'avant, la droite, l'arrière et la gauche en même temps (G)">Vue 4 directions</button>
       <a id="openPanoramaxBtn" class="button" href="#" target="_blank" rel="noopener" title="Ouvrir cette photo sur Panoramax (O)">Ouvrir dans Panoramax ↗</a>
     </div>
 
@@ -88,6 +114,11 @@
           <button id="horizon_fix" class="fix" title="Posez l'horizon visible sur la ligne rouge (dans n'importe quelle direction), puis FIX">FIX horizon</button>
         </div>
         <small>Horizon sur la ligne rouge → FIX</small>
+        <div class="btns marks-btns">
+          <button id="markHorizonBtn" class="toggle" title="Cliquez au moins 2 points de l'horizon réel, éloignés d'au moins 90° (H)">Points d'horizon</button>
+          <button id="markVerticalBtn" class="toggle" title="Cliquez le haut puis le bas d'éléments verticaux (poteaux, angles de murs) (J)">Verticales</button>
+          <button id="clearMarksBtn" title="Effacer les repères de cette photo">✕</button>
+        </div>
       </div>
 
       <div class="axis">
@@ -119,6 +150,19 @@
       <button id="saveOneBtn" title="Envoyer uniquement cette photo">Enregistrer cette photo</button>
       <button id="syncBtn" class="primary">Synchroniser vers Panoramax (<span id="dirtyCount">0</span>)</button>
     </div>
+
+    <details class="chart-panel" id="chartPanel" open hidden>
+      <summary>Courbe pitch / roll de la séquence</summary>
+      <div class="chart-legend">
+        <span class="key key-pitch">Pitch</span>
+        <span class="key key-roll">Roll</span>
+        <small>Cliquez sur la courbe pour aller à une photo.</small>
+      </div>
+      <div class="chart-wrap" id="chartWrap">
+        <svg id="chart" role="img" aria-label="Pitch et roll de chaque photo de la séquence"></svg>
+        <div id="chartTip" class="chart-tip" hidden></div>
+      </div>
+    </details>
 
     <details class="help">
       <summary>Raccourcis clavier</summary>
@@ -176,6 +220,6 @@
   }
 }
 </script>
-<script type="module" src="js/app.js?v=6"></script>
+<script type="module" src="js/app.js?v=7"></script>
 </body>
 </html>
