@@ -6,7 +6,7 @@
   <title>Pan360 FixExif</title>
   <meta name="description" content="Corrigez en WYSIWYG le pitch / roll / yaw de vos photos 360° Panoramax.">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5.15.1/index.css">
-  <link rel="stylesheet" href="css/style.css?v=7">
+  <link rel="stylesheet" href="css/style.css?v=8">
 </head>
 <body>
 
@@ -28,7 +28,8 @@
   <ul id="mySeqList"></ul>
 </div>
 
-<main>
+<main class="workspace">
+  <div class="stage">
   <div id="viewer-container">
     <div id="panorama"></div>
     <div id="crosshair" aria-hidden="true">
@@ -59,116 +60,124 @@
     <div class="quad-cell" data-dir="-90"><div class="quad-view"></div><div class="quad-line"></div><span class="quad-label">Gauche</span></div>
   </div>
 
-  <section class="sequence" id="sequencePanel" hidden>
-    <div class="strip-head">
-      <span class="legend">
-        <span class="lg lg-pending">en attente</span>
-        <span class="lg lg-synced">synchronisée</span>
-        <span class="lg lg-corrected">déjà corrigée</span>
-        <span class="lg lg-ignored">ignorée par Panoramax</span>
-        <span class="lg lg-raw">non corrigée</span>
-      </span>
-      <span class="sep"></span>
-      <button id="nextRawBtn" title="Aller à la prochaine photo non corrigée (N)">Non corrigée suivante ⏭</button>
-      <button id="nextDirtyBtn" title="Aller à la prochaine photo modifiée non envoyée (M)">Modifiée suivante ⏭</button>
-    </div>
-    <div id="strip" class="strip" role="list"></div>
-  </section>
-
-  <section class="controls" id="controls">
-    <div class="nav-row">
-      <button id="prevBtn" title="Image précédente">◀ Précédent</button>
-      <span class="counter">
-        Photo <input id="indexInput" type="number" min="1" value="1"> / <span id="total">0</span>
-      </span>
-      <button id="nextBtn" title="Image suivante">Suivant ▶</button>
-      <span class="sep"></span>
-      <button id="Turn90m">-90°</button>
-      <button id="Turn0">0°</button>
-      <button id="resetView">Reset vue</button>
-      <button id="Turn90">+90°</button>
-      <button id="Turn180">+180°</button>
-      <span class="sep"></span>
-      <button id="quadBtn" class="toggle" title="Afficher l'avant, la droite, l'arrière et la gauche en même temps (G)">Vue 4 directions</button>
-      <a id="openPanoramaxBtn" class="button" href="#" target="_blank" rel="noopener" title="Ouvrir cette photo sur Panoramax (O)">Ouvrir dans Panoramax ↗</a>
-    </div>
-
-    <div class="axes">
-      <div class="axis">
-        <h3>Pitch <output id="pitchVal">0</output>°<small id="pitchOrig"></small></h3>
-        <div class="btns">
-          <button data-axis="pitch" data-step="-10">▲▲▲</button>
-          <button data-axis="pitch" data-step="-5">▲▲</button>
-          <button data-axis="pitch" data-step="-1">▲</button>
-          <button data-reset="pitch">RESET</button>
-          <button data-axis="pitch" data-step="1">▼</button>
-          <button data-axis="pitch" data-step="5">▼▼</button>
-          <button data-axis="pitch" data-step="10">▼▼▼</button>
-        </div>
-        <input type="range" data-slider="pitch" min="-90" max="90" step="0.1" value="0">
+    <section class="sequence" id="sequencePanel" hidden>
+      <div class="strip-head">
+        <span class="legend">
+          <span class="lg lg-pending">en attente</span>
+          <span class="lg lg-synced">synchronisée</span>
+          <span class="lg lg-corrected">déjà corrigée</span>
+          <span class="lg lg-ignored">ignorée par Panoramax</span>
+          <span class="lg lg-raw">non corrigée</span>
+        </span>
       </div>
-
-      <div class="axis axis-fix">
-        <h3>Horizon</h3>
-        <div class="btns">
-          <button id="horizon_fix" class="fix" title="Posez l'horizon visible sur la ligne rouge (dans n'importe quelle direction), puis FIX">FIX horizon</button>
-        </div>
-        <small>Horizon sur la ligne rouge → FIX</small>
-        <div class="btns marks-btns">
-          <button id="markHorizonBtn" class="toggle" title="Cliquez au moins 2 points de l'horizon réel, éloignés d'au moins 90° (H)">Points d'horizon</button>
-          <button id="markVerticalBtn" class="toggle" title="Cliquez le haut puis le bas d'éléments verticaux (poteaux, angles de murs) (J)">Verticales</button>
-          <button id="clearMarksBtn" title="Effacer les repères de cette photo">✕</button>
-        </div>
-      </div>
-
-      <div class="axis">
-        <h3>Roll <output id="rollVal">0</output>°<small id="rollOrig"></small></h3>
-        <div class="btns">
-          <button data-axis="roll" data-step="-10">↻↻↻</button>
-          <button data-axis="roll" data-step="-5">↻↻</button>
-          <button data-axis="roll" data-step="-1">↻</button>
-          <button data-reset="roll">RESET</button>
-          <button data-axis="roll" data-step="1">↺</button>
-          <button data-axis="roll" data-step="5">↺↺</button>
-          <button data-axis="roll" data-step="10">↺↺↺</button>
-        </div>
-        <input type="range" data-slider="roll" min="-90" max="90" step="0.1" value="0">
-      </div>
-
-      <div class="axis">
-        <h3>Yaw <output id="yawVal">0</output>°<small id="yawOrig"></small></h3>
-        <div class="btns">
-          <button id="yaw_fix" class="fix" title="La direction visée devient la vue d'ouverture de Panoramax (sens de déplacement)">Fix heading</button>
-          <button data-reset="yaw">RESET</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="save-row">
-      <span id="status" class="status"></span>
-      <button id="revertBtn" title="Annuler les modifications de cette photo">Annuler cette photo</button>
-      <button id="saveOneBtn" title="Envoyer uniquement cette photo">Enregistrer cette photo</button>
-      <button id="syncBtn" class="primary">Synchroniser vers Panoramax (<span id="dirtyCount">0</span>)</button>
-    </div>
+      <div id="strip" class="strip" role="list"></div>
+    </section>
 
     <details class="chart-panel" id="chartPanel" open hidden>
-      <summary>Courbe pitch / roll de la séquence</summary>
-      <div class="chart-legend">
-        <span class="key key-pitch">Pitch</span>
-        <span class="key key-roll">Roll</span>
-        <small>Cliquez sur la courbe pour aller à une photo.</small>
-      </div>
+      <summary>Courbe pitch / roll
+        <span class="chart-legend">
+          <span class="key key-pitch">Pitch</span>
+          <span class="key key-roll">Roll</span>
+          <small>Cliquez sur la courbe pour aller à une photo.</small>
+        </span>
+      </summary>
       <div class="chart-wrap" id="chartWrap">
         <svg id="chart" role="img" aria-label="Pitch et roll de chaque photo de la séquence"></svg>
         <div id="chartTip" class="chart-tip" hidden></div>
       </div>
     </details>
+  </div>
+
+  <aside class="controls sidebar" id="controls">
+    <section class="card">
+      <div class="row">
+        <button id="prevBtn" title="Image précédente (W)">◀</button>
+        <span class="counter">Photo <input id="indexInput" type="number" min="1" value="1"> / <span id="total">0</span></span>
+        <button id="nextBtn" title="Image suivante (C)">▶</button>
+      </div>
+      <div class="row">
+        <button id="nextRawBtn" title="Aller à la prochaine photo non corrigée (N)">Non corrigée ⏭</button>
+        <button id="nextDirtyBtn" title="Aller à la prochaine photo modifiée non envoyée (M)">Modifiée ⏭</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Vue</h3>
+      <div class="row">
+        <button id="Turn90m" title="Q">-90°</button>
+        <button id="Turn0" title="S">0°</button>
+        <button id="Turn90" title="D">+90°</button>
+        <button id="Turn180" title="F">180°</button>
+        <button id="resetView" title="Vue par défaut (X)">Reset</button>
+      </div>
+      <div class="row">
+        <button id="quadBtn" class="toggle" title="Afficher l'avant, la droite, l'arrière et la gauche en même temps (G)">4 directions</button>
+        <a id="openPanoramaxBtn" class="button" href="#" target="_blank" rel="noopener" title="Ouvrir cette photo sur Panoramax (O)">Panoramax ↗</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Horizon</h3>
+      <div class="row">
+        <button id="horizon_fix" class="fix wide" title="Posez l'horizon visible sur la ligne rouge (dans n'importe quelle direction), puis FIX (A)">FIX horizon</button>
+      </div>
+      <div class="row">
+        <button id="markHorizonBtn" class="toggle" title="Cliquez au moins 2 points de l'horizon réel, éloignés d'au moins 90° (H)">Points d'horizon</button>
+        <button id="markVerticalBtn" class="toggle" title="Cliquez le haut puis le bas d'éléments verticaux (poteaux, angles de murs) (J)">Verticales</button>
+        <button id="clearMarksBtn" title="Effacer les repères de cette photo">✕</button>
+      </div>
+    </section>
+
+    <section class="card axis">
+      <h3>Pitch <output id="pitchVal">0</output>°<small id="pitchOrig"></small></h3>
+      <div class="row steps">
+        <button data-axis="pitch" data-step="-10" title="-10°">▲▲▲</button>
+        <button data-axis="pitch" data-step="-5" title="-5°">▲▲</button>
+        <button data-axis="pitch" data-step="-1" title="-1°">▲</button>
+        <button data-reset="pitch" title="Remettre à 0">0</button>
+        <button data-axis="pitch" data-step="1" title="+1°">▼</button>
+        <button data-axis="pitch" data-step="5" title="+5°">▼▼</button>
+        <button data-axis="pitch" data-step="10" title="+10°">▼▼▼</button>
+      </div>
+      <input type="range" data-slider="pitch" min="-90" max="90" step="0.1" value="0">
+    </section>
+
+    <section class="card axis">
+      <h3>Roll <output id="rollVal">0</output>°<small id="rollOrig"></small></h3>
+      <div class="row steps">
+        <button data-axis="roll" data-step="-10" title="-10°">↻↻↻</button>
+        <button data-axis="roll" data-step="-5" title="-5°">↻↻</button>
+        <button data-axis="roll" data-step="-1" title="-1°">↻</button>
+        <button data-reset="roll" title="Remettre à 0">0</button>
+        <button data-axis="roll" data-step="1" title="+1°">↺</button>
+        <button data-axis="roll" data-step="5" title="+5°">↺↺</button>
+        <button data-axis="roll" data-step="10" title="+10°">↺↺↺</button>
+      </div>
+      <input type="range" data-slider="roll" min="-90" max="90" step="0.1" value="0">
+    </section>
+
+    <section class="card axis">
+      <h3>Yaw <output id="yawVal">0</output>°<small id="yawOrig"></small></h3>
+      <div class="row">
+        <button id="yaw_fix" class="fix" title="La direction visée devient la vue d'ouverture de Panoramax (sens de déplacement) (E)">Fix heading</button>
+        <button data-reset="yaw" title="Remettre à 0">0</button>
+      </div>
+    </section>
+
+    <section class="card save">
+      <span id="status" class="status"></span>
+      <div class="row">
+        <button id="revertBtn" title="Annuler les modifications de cette photo">Annuler</button>
+        <button id="saveOneBtn" title="Envoyer uniquement cette photo">Enregistrer</button>
+      </div>
+      <button id="syncBtn" class="primary wide" title="Envoyer toutes les photos modifiées (V)">Synchroniser (<span id="dirtyCount">0</span>)</button>
+    </section>
 
     <details class="help">
       <summary>Raccourcis clavier</summary>
       <ul id="shortcutList"></ul>
     </details>
-  </section>
+  </aside>
 </main>
 
 <div id="loader" class="loader-overlay" hidden>
@@ -220,6 +229,6 @@
   }
 }
 </script>
-<script type="module" src="js/app.js?v=7"></script>
+<script type="module" src="js/app.js?v=8"></script>
 </body>
 </html>

@@ -95,7 +95,6 @@ input[type="text"], input[type="url"], input[type="password"], input[type="numbe
 #viewer-container {
   position: relative;
   width: 100%;
-  height: 68vh;
   background: #000;
 }
 #panorama { width: 100%; height: 100%; }
@@ -165,39 +164,18 @@ input[type="text"], input[type="url"], input[type="password"], input[type="numbe
 .empty h1 { font-size: 22px; text-align: center; }
 .empty ol { max-width: 640px; line-height: 1.7; }
 
-/* --- Controls --- */
-.controls { padding: 10px 12px 20px; text-align: center; }
 .controls.disabled { opacity: .4; pointer-events: none; }
-.nav-row, .save-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
-  gap: 6px;
-}
 .sep { flex: 0 0 18px; }
 .counter input { width: 70px; text-align: center; }
 
-.axes {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 16px 40px;
-  margin: 10px 0;
-}
-.axis h3 { margin: 6px 0; font-size: 16px; }
-.axis h3 output { font-variant-numeric: tabular-nums; color: var(--accent); }
-.axis h3 small { color: var(--muted); font-weight: normal; margin-left: 6px; }
-.axis .btns { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
-.axis input[type="range"] { width: 100%; margin-top: 6px; accent-color: var(--accent); }
 
 .status { color: var(--muted); margin-right: 8px; }
 .status.ok { color: var(--accent); }
 .status.err { color: var(--danger); }
 
-.help { margin-top: 12px; color: var(--muted); display: inline-block; text-align: left; }
+.help { color: var(--muted); text-align: left; font-size: 13px; }
 .help summary { cursor: pointer; text-align: center; }
-.help ul { columns: 2; column-gap: 32px; padding-left: 18px; margin: 8px 0; }
+.help ul { padding-left: 4px; margin: 8px 0; list-style: none; line-height: 1.8; }
 .help kbd {
   display: inline-block;
   min-width: 20px;
@@ -277,7 +255,6 @@ dialog code { color: var(--fg); }
 @media (max-width: 700px) {
   .topbar { flex-wrap: wrap; }
   .seq-form { order: 3; flex-basis: 100%; }
-  #viewer-container { height: 55vh; }
   .help ul { columns: 1; }
 }
 
@@ -288,8 +265,6 @@ dialog code { color: var(--fg); }
   z-index: 3;
   background: rgba(0, 0, 0, .6);
 }
-.axis-fix { display: flex; flex-direction: column; justify-content: center; }
-.axis-fix small { color: var(--muted); margin-top: 6px; }
 #filename .badge.warn { background: var(--danger); color: #fff; }
 
 a.button {
@@ -345,7 +320,6 @@ button.toggle.active { background: var(--accent); border-color: var(--accent-2);
   font-size: 14px;
   pointer-events: none;
 }
-.marks-btns { margin-top: 8px; }
 
 /* --- Vue 4 directions --- */
 .quad {
@@ -379,7 +353,6 @@ button.toggle.active { background: var(--accent); border-color: var(--accent-2);
   font-size: 12px;
   pointer-events: none;
 }
-body.quad-on #viewer-container { height: 50vh; }
 
 /* --- Bande de miniatures --- */
 .sequence { background: var(--bg-2); border-bottom: 1px solid #000; padding: 4px 8px 6px; }
@@ -436,7 +409,7 @@ body.quad-on #viewer-container { height: 50vh; }
 .thumb.current { border-color: #fff; border-bottom-width: 4px; }
 
 /* --- Courbe pitch / roll --- */
-.chart-panel { margin-top: 14px; text-align: left; }
+.chart-panel { text-align: left; }
 .chart-panel summary { cursor: pointer; text-align: center; color: var(--muted); }
 .chart-legend { display: flex; gap: 14px; align-items: center; justify-content: center; margin: 6px 0; font-size: 13px; }
 .chart-legend small { color: var(--muted); }
@@ -451,7 +424,7 @@ body.quad-on #viewer-container { height: 50vh; }
 .key-pitch::before { background: var(--series-pitch); }
 .key-roll::before { background: var(--series-roll); }
 .chart-wrap { position: relative; }
-#chart { display: block; width: 100%; height: 160px; cursor: pointer; }
+#chart { display: block; width: 100%; height: 96px; cursor: pointer; }
 #chart .grid { stroke: #3a3d43; stroke-width: 1; }
 #chart .zero { stroke: #6a6d75; stroke-width: 1; }
 #chart .tick { fill: var(--muted); font-size: 11px; }
@@ -479,5 +452,89 @@ body.quad-on #viewer-container { height: 50vh; }
 
 @media (max-width: 700px) {
   .quad { grid-template-columns: repeat(2, 1fr); height: 30vh; }
-  body.quad-on #viewer-container { height: 40vh; }
+}
+
+/* =========================================================================
+   Disposition plein écran : visionneuse à gauche, commandes à droite,
+   rien ne défile au niveau de la page (seule la colonne de droite peut défiler
+   sur les petits écrans).
+   ========================================================================= */
+html, body { height: 100%; }
+body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.topbar { flex: 0 0 auto; }
+.workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+.stage {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: #000;
+}
+.stage #viewer-container { flex: 1 1 auto; min-height: 220px; }
+.stage .quad { flex: 0 0 auto; height: 17vh; min-height: 100px; }
+.stage .sequence { flex: 0 0 auto; padding: 2px 8px 0; }
+.stage .chart-panel { flex: 0 0 auto; background: var(--bg-2); padding: 2px 8px 4px; }
+.chart-panel summary { font-size: 13px; }
+.chart-panel summary { text-align: left; }
+.chart-panel .chart-legend { display: inline-flex; margin: 0 0 0 14px; vertical-align: middle; }
+.strip-head { min-height: 18px; }
+.legend { font-size: 12px; gap: 8px; }
+.strip { padding: 3px 2px 3px; }
+.thumb { width: 80px; height: 40px; }
+
+/* --- Colonne de commandes --- */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px;
+  overflow-y: auto;
+  background: var(--bg-2);
+  border-left: 1px solid #000;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 7px;
+  background: var(--bg);
+  border: 1px solid #000;
+  border-radius: 6px;
+}
+.card h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.card.axis h3 { text-transform: none; letter-spacing: 0; font-size: 15px; color: var(--fg); }
+.card.axis h3 output { font-variant-numeric: tabular-nums; color: var(--accent); }
+.card.axis h3 small { color: var(--muted); font-weight: normal; margin-left: 6px; font-size: 12px; }
+.card .row { display: flex; gap: 4px; align-items: center; }
+.card .row > button, .card .row > a.button { flex: 1 1 0; text-align: center; padding: 4px 4px; }
+.card .row.steps > button { padding: 4px 0; font-size: 12px; }
+.card .counter { flex: 2 1 auto; text-align: center; white-space: nowrap; }
+.card .counter input { width: 64px; }
+.card input[type="range"] { width: 100%; margin: 2px 0 0; accent-color: var(--accent); }
+.card .wide, .card > button.wide { width: 100%; padding: 6px; font-size: 15px; }
+.card.save .status { margin: 0; font-size: 13px; }
+.sidebar .help { margin-top: auto; padding: 4px 2px; }
+
+/* --- Petits écrans : retour à une page qui défile --- */
+@media (max-width: 900px) {
+  body { overflow: auto; height: auto; display: block; }
+  .workspace { display: block; }
+  .stage #viewer-container { height: 55vh; }
+  .sidebar { border-left: 0; overflow: visible; }
 }
