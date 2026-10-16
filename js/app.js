@@ -464,9 +464,11 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   }
 
   /** Applique une rotation monde supplémentaire et en déduit les nouveaux pitch / roll / yaw. */
-  function composeRotation(extra) {
+  function composeRotation(extra, { keepYaw = false } = {}) {
     const e = new Euler().setFromQuaternion(extra.multiply(currentRotation()), 'YXZ');
-    setValues({ pitch: -radToDeg(e.x), yaw: radToDeg(e.y), roll: radToDeg(e.z) });
+    // Le pan (yaw) est la rotation la plus externe (autour de la verticale de l'écran) : le
+    // remettre à sa valeur ne change pas la mise à niveau, seulement l'orientation.
+    setValues({ pitch: -radToDeg(e.x), yaw: keepYaw ? values().yaw : radToDeg(e.y), roll: radToDeg(e.z) });
   }
 
   /**
@@ -481,7 +483,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     const dh = viewer.dataHelper;
     const from = dh.sphericalCoordsToVector3(pos).normalize();
     const to = dh.sphericalCoordsToVector3({ yaw: pos.yaw, pitch: 0 }).normalize();
-    composeRotation(new Quaternion().setFromUnitVectors(from, to));
+    composeRotation(new Quaternion().setFromUnitVectors(from, to), { keepYaw: true });
     viewer.rotate({ yaw: pos.yaw, pitch: 0 });
   }
 
@@ -574,7 +576,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     }
     if (u.dot(UP) < 0) u.negate();
     if (u.angleTo(UP) < 1e-6) return;
-    composeRotation(new Quaternion().setFromUnitVectors(u, UP));
+    composeRotation(new Quaternion().setFromUnitVectors(u, UP), { keepYaw: true });
   }
 
   function updateMarkUi() {

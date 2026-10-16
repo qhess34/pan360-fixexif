@@ -1,0 +1,15 @@
+{
+  "name": "pan360-fixexif",
+  "private": true,
+  "description": "Correction WYSIWYG du pitch / roll / yaw des photos 360° Panoramax (application statique).",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 5555",
+    "test": "node tests/e2e.mjs"
+  },
+  "devDependencies": {
+    "@photo-sphere-viewer/core": "5.15.1",
+    "playwright": "1.56.1",
+    "three": "0.185.1"
+  }
+}
