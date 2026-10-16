@@ -1,0 +1,14 @@
+# Lancement local : docker compose up --build   puis http://localhost:8080
+services:
+  pan360-fixexif:
+    build: .
+    image: pan360-fixexif
+    ports:
+      - "8080:80"
+    # Développement : les fichiers du dépôt sont montés en lecture seule,
+    # une modification est visible au simple rechargement de la page.
+    volumes:
+      - ./index.html:/usr/share/nginx/html/index.html:ro
+      - ./css:/usr/share/nginx/html/css:ro
+      - ./js:/usr/share/nginx/html/js:ro
+    restart: unless-stopped

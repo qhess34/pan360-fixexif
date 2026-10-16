@@ -1,0 +1,12 @@
+.git
+doc
+docs
+*.md
+CNAME
+docker-compose.yml
+node_modules
+tests
+tools
+package.json
+package-lock.json
+.gitignore
