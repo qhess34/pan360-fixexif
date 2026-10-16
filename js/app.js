@@ -760,6 +760,8 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   });
   document.querySelectorAll('[data-slider]').forEach(s => {
     s.oninput = () => setValues({ [s.dataset.slider]: Number(s.value) });
+    // Rend la main à la visionneuse : les flèches tournent la vue au lieu de bouger le curseur.
+    s.onchange = () => s.blur();
   });
 
   $('revertBtn').onclick = revertCurrent;
@@ -798,7 +800,10 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (!state.items.length || state.busy) return;
     const t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    // On ne bloque les raccourcis que dans les champs de saisie (pas sur les curseurs ni les boutons).
+    const typing = t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable
+      || (t.tagName === 'INPUT' && !['range', 'checkbox', 'button', 'submit'].includes(t.type)));
+    if (typing) return;
     if ($('settingsDialog').open) return;
     const sc = shortcutByCode[e.code];
     if (!sc) return;
