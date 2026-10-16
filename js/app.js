@@ -788,7 +788,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   }
 
   function niceStep(max) {
-    for (const s of [1, 2, 5, 10, 15, 30, 45]) if (max / s <= 4) return s;
+    for (const s of [1, 2, 5, 10, 15, 30, 45]) if (max / s <= 2) return s;
     return 90;
   }
 
@@ -1139,6 +1139,11 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     else $('viewer-container').requestFullscreen().catch(() => { /* refusé */ });
   };
   document.addEventListener('fullscreenchange', () => { if (viewer) viewer.autoSize(); });
+  // La visionneuse et la courbe suivent la place disponible (vue 4 directions, courbe repliée…).
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => { if (viewer) viewer.autoSize(); }).observe($('panorama'));
+    new ResizeObserver(scheduleChart).observe($('chart'));
+  }
   document.querySelectorAll('[data-axis]').forEach(b => {
     b.onclick = () => step(b.dataset.axis, Number(b.dataset.step));
   });
