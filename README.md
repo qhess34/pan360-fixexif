@@ -40,10 +40,23 @@ python3 -m http.server 5555   # puis http://127.0.0.1:5555
    - **Horizon** : dans n'importe quelle direction, monter/descendre la vue pour poser l'horizon réel
      sur la ligne rouge, puis **FIX horizon** (pitch et roll sont recalculés ensemble). Répéter dans
      une direction perpendiculaire (ex. 0° puis 90°) pour un résultat parfait.
+   - **Points d'horizon** (H) : cliquez au moins 2 points de l'horizon réel (ligne d'horizon, points
+     de fuite, éléments à hauteur de caméra), idéalement éloignés d'au moins 90° : pitch et roll sont
+     calculés d'un coup. Chaque point ajouté affine le résultat.
+   - **Verticales** (J) : cliquez le haut puis le bas d'éléments verticaux (poteaux, angles de murs).
+     Une verticale corrige déjà en partie ; deux verticales dans des directions différentes suffisent
+     pour une correction complète. Très fiable en ville. **Échap** quitte le mode, **✕** efface les repères.
    - **Yaw** : tourner la vue vers la direction qui doit s'afficher à l'ouverture (sens de déplacement)
      puis **Fix heading**.
    - Les boutons ▲/▼, ↻/↺ et les curseurs permettent un réglage fin ; **RESET** remet l'axe à 0.
-4. **Synchroniser vers Panoramax** envoie toutes les photos modifiées
+4. Outils de suivi :
+   - **Vue 4 directions** (G, optionnelle) : avant / droite / arrière / gauche affichés en même temps
+     sous la vue principale, mis à jour en direct ; un clic oriente la vue principale.
+   - **Bande de miniatures** : statut de chaque photo (en attente, synchronisée, déjà corrigée, ignorée
+     par Panoramax, non corrigée) et boutons **Non corrigée suivante** (N) / **Modifiée suivante** (M).
+   - **Courbe pitch / roll** de toute la séquence pour repérer les photos qui sortent de la tendance ;
+     un clic sur la courbe ouvre la photo correspondante.
+5. **Synchroniser vers Panoramax** envoie toutes les photos modifiées
    (ou **Enregistrer cette photo** pour la photo courante uniquement).
 
 Les modifications non synchronisées sont conservées dans le navigateur : vous pouvez fermer
@@ -58,10 +71,13 @@ l'aide intégrée affiche les touches de votre clavier quand le navigateur le pe
 | Touche | Action |
 |---|---|
 | **A** ou **Z** | FIX horizon (horizon posé sur la ligne rouge) |
+| **H** / **J** | Mode points d'horizon / mode verticales (**Échap** pour quitter) |
 | **E** | Fix heading : la direction visée devient la vue d'ouverture |
 | **Q** / **S** / **D** / **F** | Vue à -90° / 0° / +90° / 180° (0° = sens de déplacement) |
 | **W** / **C** (ou PgUp / PgDn) | Image précédente / suivante |
 | **X** | Vue par défaut (selon le yaw) |
+| **N** / **M** | Photo non corrigée suivante / photo modifiée suivante |
+| **G** | Vue 4 directions |
 | **O** | Ouvrir la photo dans Panoramax |
 | **V** | Synchroniser vers Panoramax |
 | **← →** / **↑ ↓** | Tourner la vue (5°) / l'incliner finement (0,2°) |
