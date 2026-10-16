@@ -291,3 +291,15 @@ dialog code { color: var(--fg); }
 .axis-fix { display: flex; flex-direction: column; justify-content: center; }
 .axis-fix small { color: var(--muted); margin-top: 6px; }
 #filename .badge.warn { background: var(--danger); color: #fff; }
+
+a.button {
+  display: inline-block;
+  background: var(--bg-3);
+  border: 1px solid #4a4d55;
+  border-radius: 4px;
+  padding: 3px 8px;
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+}
+a.button:hover { background: #444852; }
