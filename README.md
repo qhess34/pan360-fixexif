@@ -62,6 +62,7 @@ l'aide intégrée affiche les touches de votre clavier quand le navigateur le pe
 | **Q** / **S** / **D** / **F** | Vue à -90° / 0° / +90° / 180° (0° = sens de déplacement) |
 | **W** / **C** (ou PgUp / PgDn) | Image précédente / suivante |
 | **X** | Vue par défaut (selon le yaw) |
+| **O** | Ouvrir la photo dans Panoramax |
 | **V** | Synchroniser vers Panoramax |
 | **← →** / **↑ ↓** | Tourner la vue (5°) / l'incliner finement (0,2°) |
 

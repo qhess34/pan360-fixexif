@@ -610,6 +610,11 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   // ---------------------------------------------------------------------------
   function fmt(v) { return (Math.round(v * 100) / 100).toString(); }
 
+  /** URL de la photo sur le site Panoramax. */
+  function panoramaxPictureUrl(item = currentItem()) {
+    return `${state.instance.replace(/\/+$/, '')}/#focus=pic&pic=${item.id}&seq=${item.collection || state.collectionId}`;
+  }
+
   function refreshUi() {
     const item = currentItem();
     const dirtyCount = state.items.filter(isDirty).length;
@@ -627,12 +632,13 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
 
     $('indexInput').value = state.index + 1;
     $('saveOneBtn').disabled = !dirty;
+    $('openPanoramaxBtn').href = panoramaxPictureUrl(item);
     $('revertBtn').disabled = !dirty;
 
     const label = $('filename');
     label.textContent = '';
     const link = document.createElement('a');
-    link.href = `${state.instance.replace(/\/+$/, '')}/#focus=pic&pic=${item.id}&seq=${item.collection || state.collectionId}`;
+    link.href = panoramaxPictureUrl(item);
     link.target = '_blank';
     link.rel = 'noopener';
     link.textContent = `${state.index + 1}/${state.items.length} · ${item.datetime ? new Date(item.datetime).toLocaleString() : item.id}`;
@@ -780,6 +786,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     { code: 'KeyZ', azerty: 'W', label: 'Image précédente', run: () => go(-1) },
     { code: 'KeyX', azerty: 'X', label: 'Vue par défaut', run: resetView },
     { code: 'KeyC', azerty: 'C', label: 'Image suivante', run: () => go(1) },
+    { code: 'KeyO', azerty: 'O', label: 'Ouvrir la photo dans Panoramax', run: () => window.open(panoramaxPictureUrl(), '_blank', 'noopener') },
     { code: 'KeyV', azerty: 'V', label: 'Synchroniser vers Panoramax', run: () => sync(state.items) },
     { code: 'PageUp', azerty: 'PgUp', label: 'Image précédente', run: () => go(-1) },
     { code: 'PageDown', azerty: 'PgDn', label: 'Image suivante', run: () => go(1) },
