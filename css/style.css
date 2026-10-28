@@ -538,3 +538,16 @@ body {
   .stage #viewer-container { height: 55vh; }
   .sidebar { border-left: 0; overflow: visible; }
 }
+
+/* --- Lien vers le dépôt GitHub --- */
+.repo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.repo-link:hover { color: var(--fg); }
+@media (max-width: 700px) { .repo-link span { display: none; } }
