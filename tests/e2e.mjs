@@ -23,11 +23,14 @@ const pid = i => `aaaaaaaa-0000-0000-0000-00000000000${i}`;
 const TILT = [4, -3];
 
 // Photos : 0 = déjà corrigée, 1 = inclinée non corrigée, 2 = valeurs ignorées par Panoramax
-// (pitch seul) et caméra montée à l'envers (view:azimuth 180° alors que la séquence va au nord).
+// (pitch seul) et caméra montée à l'envers (view:azimuth 180° alors que la séquence va au nord),
+// 3 = photo à plat de 70° (1600×1200), inclinée comme les autres.
+const FLAT = { width: 1600, height: 1200, fov: 70 };
 const PICS = [
   { img: 'level.jpg', pitch: 0.01, roll: 0.01, azimuth: 0 },
   { img: 'tilt-4-3.jpg', pitch: 0, roll: 0, azimuth: 0 },
   { img: 'tilt-4-3.jpg', pitch: 2, roll: 0, azimuth: 180 },
+  { img: 'flat-tilt-4-3.jpg', pitch: 0, roll: 0, azimuth: 90, flat: true },
 ];
 const features = PICS.map((p, i) => ({
   type: 'Feature',
@@ -40,7 +43,9 @@ const features = PICS.map((p, i) => ({
     'pers:pitch': p.pitch,
     'pers:roll': p.roll,
     'pers:yaw': 0,
-    'pers:interior_orientation': { field_of_view: 360 },
+    'pers:interior_orientation': p.flat
+      ? { field_of_view: FLAT.fov, sensor_array_dimensions: [FLAT.width, FLAT.height] }
+      : { field_of_view: 360 },
   },
   assets: { sd: { href: `https://pano.test/${p.img}?i=${i}` }, thumb: { href: `https://pano.test/${p.img}?t=${i}` } },
 }));
@@ -134,9 +139,9 @@ await page.reload();
 await ready();
 await page.waitForTimeout(800);
 
-check('séquence chargée', (await page.textContent('#total')) === '3');
+check('séquence chargée', (await page.textContent('#total')) === '4');
 const statuses = await page.evaluate(() => [...document.querySelectorAll('.thumb')].map(t => t.className.match(/st-(\w+)/)[1]));
-check('statuts des miniatures', statuses.join() === 'corrected,raw,ignored', statuses.join());
+check('statuts des miniatures', statuses.join() === 'corrected,raw,ignored,raw', statuses.join());
 
 // Verticales : deux poteaux dans des directions différentes.
 await page.keyboard.press('KeyJ');
@@ -186,7 +191,53 @@ check('PATCH photo 2 : pitch / roll / yaw', JSON.stringify(Object.keys(byId[pid(
   JSON.stringify(byId[pid(1)]?.body));
 check('PATCH photo 3 : roll 0 → 0,01', byId[pid(2)]?.body.pitch === 3 && byId[pid(2)]?.body.roll === 0.01, JSON.stringify(byId[pid(2)]?.body));
 const finalStatuses = await page.evaluate(() => [...document.querySelectorAll('.thumb')].map(t => t.className.match(/st-(\w+)/)[1]));
-check('statuts après synchronisation', finalStatuses.join() === 'corrected,synced,synced', finalStatuses.join());
+check('statuts après synchronisation', finalStatuses.join() === 'corrected,synced,synced,raw', finalStatuses.join());
+
+// Photo 4 : photo à plat, affichée comme Panoramax sur une portion de sphère de 70°.
+await page.evaluate(() => { if (!document.body.classList.contains('quad-on')) document.getElementById('quadBtn').click(); });
+await page.keyboard.press('KeyC');
+await page.waitForFunction(() => window.__viewer().state.textureData?.panoData?.croppedWidth === 1600, null, { timeout: 15000 });
+await page.waitForTimeout(500);
+const flat = await page.evaluate(() => {
+  const v = window.__viewer();
+  return { pano: v.state.textureData.panoData, maxFov: v.config.maxFov, vFov: v.state.vFov, yaw: v.getPosition().yaw * 180 / Math.PI };
+});
+const expW = Math.floor(FLAT.width * 360 / FLAT.fov);
+check('photo à plat : portion de sphère de 70°', flat.pano.fullWidth === expW && flat.pano.croppedX === Math.floor((expW - FLAT.width) / 2),
+  JSON.stringify(flat.pano));
+check('photo à plat : champ max = 70 × 3/4, appliqué à la vue', flat.maxFov === 52.5 && near(flat.vFov, 52.5, 0.01), `${flat.maxFov} / vue ${flat.vFov}`);
+check('photo à plat : ouverture au centre (pas le sens de déplacement)', near(flat.yaw, 0, 0.01), `${flat.yaw.toFixed(2)}°`);
+check('photo à plat : badge', (await page.textContent('#filename')).includes('photo à plat · 70°'));
+const disabled = await page.evaluate(() => ['Turn90m', 'Turn90', 'Turn180', 'quadBtn', 'yaw_fix'].every(id => document.getElementById(id).disabled));
+check('photo à plat : commandes latérales et Fix heading désactivées', disabled);
+check('photo à plat : vue 4 directions masquée', await page.evaluate(() => document.getElementById('quad').hidden));
+
+// FIX horizon sur la photo à plat : point de fuite de la rue (horizon réel, droit devant).
+const flatHorizon = (() => {
+  const f = (FLAT.width / 2) / Math.tan(FLAT.fov / 2 * Math.PI / 180);
+  let [x, y, z] = [0, 0, 1];
+  const a = -TILT[0] * Math.PI / 180, b = -TILT[1] * Math.PI / 180;
+  [y, z] = [Math.cos(a) * y - Math.sin(a) * z, Math.sin(a) * y + Math.cos(a) * z];
+  [x, y] = [Math.cos(b) * x - Math.sin(b) * y, Math.sin(b) * x + Math.cos(b) * y];
+  return { textureX: FLAT.width / 2 + f * x / z, textureY: FLAT.height / 2 - f * y / z };
+})();
+await page.evaluate(async tex => {
+  const v = window.__viewer();
+  v.rotate(v.dataHelper.textureCoordsToSphericalCoords(tex));
+  await new Promise(res => setTimeout(res, 200));
+}, flatHorizon);
+await page.keyboard.press('KeyQ');
+await page.waitForTimeout(100);
+const flatAfter = await page.evaluate(tex => window.__viewer().dataHelper.textureCoordsToSphericalCoords(tex).pitch * 180 / Math.PI, flatHorizon);
+check('photo à plat : FIX horizon → point de fuite à l\'horizon', near(flatAfter, 0, 0.05), `${flatAfter.toFixed(3)}°`);
+
+// Règle Panoramax des photos à plat : pitch seul suffit, le roll nul n'est pas remplacé par 0,01.
+await page.evaluate(() => document.querySelector('[data-reset="roll"]').click());
+patches.length = 0;
+await page.keyboard.press('KeyV');
+await page.waitForTimeout(1500);
+const flatBody = patches[0]?.body;
+check('photo à plat : PATCH sans 0,01 sur le roll', patches.length === 1 && flatBody.pitch !== 0 && flatBody.roll === 0, JSON.stringify(flatBody));
 
 await browser.close();
 console.log(failures ? `\n${failures} échec(s)` : '\nTous les tests passent.');

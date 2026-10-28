@@ -551,3 +551,4 @@ body {
 }
 .repo-link:hover { color: var(--fg); }
 @media (max-width: 700px) { .repo-link span { display: none; } }
+#filename .badge.info { background: var(--bg-3); color: var(--fg); border: 1px solid #555; }
