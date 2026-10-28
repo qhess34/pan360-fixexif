@@ -3,9 +3,11 @@
 Sert aux tests (tests/fixtures) et aux captures d'écran du README : la géométrie est connue,
 on peut donc vérifier qu'une correction calculée par l'app est exacte.
 
-Usage : python3 tools/scene.py SORTIE.jpg PITCH ROLL [LARGEUR]
+Usage : python3 tools/scene.py SORTIE.jpg PITCH ROLL [LARGEUR] [CHAMP]
   PITCH / ROLL : inclinaison simulée de la caméra, en degrés.
   La correction Panoramax attendue est alors pitch = -PITCH, roll = -ROLL.
+  CHAMP : si fourni, photo à plat (caméra perspective) de CHAMP degrés de large, format 4:3,
+  au lieu d'un panorama équirectangulaire 360°.
 
 Repère : x à droite, y en haut, z vers l'avant ; caméra à 2,2 m du sol.
 Poteaux verticaux (rayon 0,12 m, hauteur 6 m) en x = ±5,5 et z = -60…60 tous les 12 m ;
@@ -21,12 +23,21 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)  # divisions par 0 at
 out = sys.argv[1]
 tilt_pitch, tilt_roll = float(sys.argv[2]), float(sys.argv[3])
 W = int(sys.argv[4]) if len(sys.argv) > 4 else 4096
-H = W // 2
-u = (np.arange(W) + .5) / W; v = (np.arange(H) + .5) / H
-lon = (u - .5) * 2 * np.pi            # 0 = avant (+z)
-lat = (.5 - v) * np.pi
-LON, LAT = np.meshgrid(lon, lat)
-d = np.stack([np.cos(LAT) * np.sin(LON), np.sin(LAT), np.cos(LAT) * np.cos(LON)], -1)  # x droite, y haut, z avant
+flat_fov = float(sys.argv[5]) if len(sys.argv) > 5 else None
+if flat_fov:
+    # Caméra perspective (sténopé) : z vers l'avant, distance focale déduite du champ horizontal
+    H = W * 3 // 4
+    f = (W / 2) / np.tan(np.radians(flat_fov) / 2)
+    X, Y = np.meshgrid(np.arange(W) + .5 - W / 2, H / 2 - (np.arange(H) + .5))
+    d = np.stack([X / f, Y / f, np.ones_like(X)], -1)
+    d /= np.linalg.norm(d, axis=-1, keepdims=True)
+else:
+    H = W // 2
+    u = (np.arange(W) + .5) / W; v = (np.arange(H) + .5) / H
+    lon = (u - .5) * 2 * np.pi            # 0 = avant (+z)
+    lat = (.5 - v) * np.pi
+    LON, LAT = np.meshgrid(lon, lat)
+    d = np.stack([np.cos(LAT) * np.sin(LON), np.sin(LAT), np.cos(LAT) * np.cos(LON)], -1)  # x droite, y haut, z avant
 # caméra inclinée : on tourne les rayons (roll autour de z, pitch autour de x)
 def rot(a, axis):
     a = np.radians(a); c, s = np.cos(a), np.sin(a)

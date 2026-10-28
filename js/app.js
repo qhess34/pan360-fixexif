@@ -21,6 +21,8 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   const MIN_FOV = 30;
   const MAX_FOV = 90;
   const NUDGE = 0.01;              // voir panoramaxPayload()
+  const FLAT_DEFAULT_FOV = 70;     // champ horizontal supposé d'une photo à plat (comme Panoramax)
+  const FLAT_PORTRAIT_FOV = 35;    // … en portrait, si le champ n'est pas connu
   const { degToRad, radToDeg } = MathUtils;
   const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
@@ -199,6 +201,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
       azimuth: firstNumber(p['view:azimuth'], exif['Exif.GPSInfo.GPSImgDirection']),
       relHeading: 0,
       is360: (p['pers:interior_orientation'] || {}).field_of_view === 360,
+      ...projectionInfo(p),
       original: {
         pitch: firstNumber(p['pers:pitch'], exif['Xmp.GPano.PosePitchDegrees']),
         roll: firstNumber(p['pers:roll'], exif['Xmp.GPano.PoseRollDegrees']),
@@ -206,6 +209,106 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
       },
     };
   }
+
+  // ---------------------------------------------------------------------------
+  // Projection des photos non 360° (copie de @panoramax/web-viewer, utils/picture.js)
+  // ---------------------------------------------------------------------------
+  // Panoramax affiche une photo à plat sur une portion de sphère de la taille de son champ de vue,
+  // centrée dans un panorama virtuel noir ; un panorama 360° recadré est affiché avec son recadrage.
+
+  const toInt = v => parseInt(v, 10);
+
+  /** Recadrage déclaré par la photo (getCroppedPanoData() de Panoramax, sans l'image). */
+  function croppedPanoData(p) {
+    const io = p['pers:interior_orientation'] || {};
+    const exif = p.exif || {};
+    let res;
+    if (io.visible_area && io.sensor_array_dimensions) {
+      const va = io.visible_area, sad = io.sensor_array_dimensions;
+      res = {
+        fullWidth: toInt(sad[0]),
+        fullHeight: toInt(sad[1]),
+        croppedX: toInt(va[0]),
+        croppedY: toInt(va[1]),
+        croppedWidth: toInt(sad[0]) - toInt(va[2]) - toInt(va[0]),
+        croppedHeight: toInt(sad[1]) - toInt(va[3]) - toInt(va[1]),
+      };
+    }
+    if (!res && p.exif) {
+      res = {
+        fullWidth: toInt(exif['Xmp.GPano.FullPanoWidthPixels']),
+        fullHeight: toInt(exif['Xmp.GPano.FullPanoHeightPixels']),
+        croppedX: toInt(exif['Xmp.GPano.CroppedAreaLeftPixels']),
+        croppedY: toInt(exif['Xmp.GPano.CroppedAreaTopPixels']),
+        croppedWidth: toInt(exif['Xmp.GPano.CroppedAreaImageWidthPixels']),
+        croppedHeight: toInt(exif['Xmp.GPano.CroppedAreaImageHeightPixels']),
+      };
+      if (res.croppedWidth > res.fullWidth) res.fullWidth = res.croppedWidth;
+      if (res.croppedHeight > res.fullHeight) res.fullHeight = res.croppedHeight;
+    }
+    if (!res) return null;
+    res = Object.fromEntries(Object.entries(res).filter(([, v]) => !isNaN(v)));
+    // Recadrage inutile : pas de zone recadrée, ou zone recadrée = image entière
+    if (!res.croppedWidth || !res.croppedHeight || !res.fullWidth
+      || (res.fullWidth === res.croppedWidth && res.fullHeight === res.croppedHeight)) return null;
+    return res;
+  }
+
+  /** Type de projection et champ de vue d'une photo, d'après ses métadonnées. */
+  function projectionInfo(p) {
+    const io = p['pers:interior_orientation'] || {};
+    const fovDefined = io.field_of_view != null;
+    let hfov = fovDefined ? toInt(io.field_of_view) : FLAT_DEFAULT_FOV;
+    const size = io.sensor_array_dimensions;
+    const crop = croppedPanoData(p);
+    if (!crop && hfov !== 360 && !fovDefined && size && toInt(size[0]) < toInt(size[1])) hfov = FLAT_PORTRAIT_FOV;
+    return {
+      projection: crop ? 'cropped' : (hfov === 360 ? 'sphere' : 'flat'),
+      hfov,
+      fovDefined,
+      crop,
+    };
+  }
+
+  /** panoData pour Photo Sphere Viewer, calculé sur l'image réellement chargée (SD ou HD). */
+  function panoDataFor(item, img) {
+    if (item.projection === 'cropped') {
+      // Mise à l'échelle du recadrage déclaré sur la taille de l'image chargée
+      const c = item.crop;
+      const ratio = img.width / (c.croppedWidth || c.fullWidth);
+      const scale = v => (v === undefined ? undefined : Math.floor(v * ratio));
+      return {
+        fullWidth: scale(c.fullWidth), fullHeight: scale(c.fullHeight),
+        croppedWidth: scale(c.croppedWidth), croppedHeight: scale(c.croppedHeight),
+        croppedX: scale(c.croppedX) || 0, croppedY: scale(c.croppedY) || 0,
+      };
+    }
+    if (item.projection === 'flat') {
+      // getFlatCrop() de Panoramax
+      let hfov = item.hfov;
+      if (img.width < img.height && !item.fovDefined) hfov = FLAT_PORTRAIT_FOV;
+      const vfov = hfov * img.height / img.width;
+      const panoWidth = img.width * 360 / hfov;
+      const panoHeight = img.height * 180 / vfov;
+      return {
+        fullWidth: Math.floor(panoWidth),
+        fullHeight: Math.floor(panoHeight),
+        croppedWidth: img.width,
+        croppedHeight: img.height,
+        croppedX: Math.floor((panoWidth - img.width) / 2),
+        croppedY: Math.floor((panoHeight - img.height) / 2),
+      };
+    }
+    return { fullWidth: img.width, fullHeight: img.height, croppedWidth: img.width, croppedHeight: img.height, croppedX: 0, croppedY: 0 };
+  }
+
+  /** Champ de vue maximal, comme Panoramax : min(champ horizontal × 3/4, 90°). */
+  function maxFovFor(item) {
+    return Math.min((item.projection === 'sphere' || item.is360 ? 360 : item.hfov) * 3 / 4, MAX_FOV);
+  }
+
+  /** Photo couvrant tout le tour : les vues latérales / arrière ont un sens. */
+  const isFullTurn = item => !!item && item.is360;
 
   /** Azimut (0-360°) du segment GPS from → to. Copie de getAzimuth() de @panoramax/web-viewer. */
   function getAzimuth(from, to) {
@@ -372,7 +475,8 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
 
   /** Direction d'ouverture de la vue dans Panoramax (sens de déplacement), en radians. */
   function startYaw(item = currentItem()) {
-    return item ? degToRad(-item.relHeading) : 0;
+    // Comme Panoramax : 360° → sens de déplacement ; photo à plat → centre de l'image.
+    return item && isFullTurn(item) ? degToRad(-item.relHeading) : 0;
   }
 
   function pictureUrl(item) {
@@ -386,12 +490,13 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
       // seules les valeurs de l'API (pers:yaw / pers:pitch / pers:roll) comptent.
       adapter: [EquirectangularAdapter, { useXmpData: false }],
       panorama: pictureUrl(item),
+      panoData: img => panoDataFor(item, img),
       sphereCorrection: displayedCorrection(item),
       defaultYaw: startYaw(item),
       defaultPitch: 0,
       defaultZoomLvl: DEFAULT_ZOOM,
-      minFov: MIN_FOV,
-      maxFov: MAX_FOV,
+      minFov: Math.min(MIN_FOV, maxFovFor(item)),
+      maxFov: maxFovFor(item),
       navbar: false,
       keyboard: false,             // les raccourcis sont gérés par l'application
       mousewheelCtrlKey: false,
@@ -411,12 +516,22 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     if (!viewer) {
       createViewer(item);
     } else {
+      const maxFov = maxFovFor(item);
+      viewer.setOptions({ minFov: Math.min(MIN_FOV, maxFov), maxFov });
       viewer.setPanorama(pictureUrl(item), {
+        panoData: img => panoDataFor(item, img),
         sphereCorrection: displayedCorrection(item),
         position: { yaw: startYaw(item), pitch: 0 },
+        zoom: DEFAULT_ZOOM,
         transition: false,
         showLoader: true,
-      }).then(() => applyPose()).catch(e => {
+      }).then(() => {
+        // Photo Sphere Viewer garde le champ courant quand maxFov change (passage 360° → photo à plat) :
+        // on force le recalcul pour que la photo remplisse la vue, comme dans Panoramax.
+        viewer.zoom(DEFAULT_ZOOM + 1);
+        viewer.zoom(DEFAULT_ZOOM);
+        applyPose();
+      }).catch(e => {
         if (!isAbort(e)) toast('Erreur d\'affichage : ' + e.message, 'err', 8000);
       });
     }
@@ -444,6 +559,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   /** Oriente la vue (angle relatif au sens de déplacement, vue d'ouverture de Panoramax). */
   function lookAt(yawDeg) {
     if (!viewer) return;
+    if (yawDeg && !isFullTurn(currentItem())) return; // photo à plat : rien sur les côtés
     viewer.rotate({ yaw: startYaw() + degToRad(yawDeg), pitch: 0 });
   }
 
@@ -490,6 +606,10 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   /** La direction visée devient la vue d'ouverture de Panoramax (sens de déplacement). */
   function fixYaw() {
     if (!viewer) return;
+    if (!isFullTurn(currentItem())) {
+      toast('Fix heading n\'a pas de sens sur une photo à plat : elle s\'ouvre toujours en son centre.');
+      return;
+    }
     const pos = viewer.getPosition();
     const dh = viewer.dataHelper;
     const from = dh.sphericalCoordsToVector3({ yaw: pos.yaw, pitch: 0 }).normalize();
@@ -668,8 +788,11 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
 
   function quadShow(item) {
     if (!settings.quad || !item) return;
-    $('quad').hidden = false;
-    document.body.classList.add('quad-on');
+    // Photo à plat : pas de côtés ni d'arrière à montrer, la vue 4 directions est masquée.
+    const show = isFullTurn(item);
+    $('quad').hidden = !show;
+    document.body.classList.toggle('quad-on', show);
+    if (!show) return;
     const cells = quadCells();
     cells.forEach((cell, i) => {
       const yaw = startYaw(item) + degToRad(Number(cell.dataset.dir));
@@ -678,6 +801,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
           container: cell.querySelector('.quad-view'),
           adapter: [EquirectangularAdapter, { useXmpData: false }],
           panorama: pictureUrl(item),
+          panoData: img => panoDataFor(item, img),
           sphereCorrection: displayedCorrection(item),
           defaultYaw: yaw,
           defaultPitch: 0,
@@ -692,6 +816,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
         });
       } else {
         quad.viewers[i].setPanorama(pictureUrl(item), {
+          panoData: img => panoDataFor(item, img),
           sphereCorrection: displayedCorrection(item),
           position: { yaw, pitch: 0 },
           transition: false,
@@ -1007,6 +1132,9 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
 
     $('indexInput').value = state.index + 1;
     $('saveOneBtn').disabled = !dirty;
+    // Photo à plat : seules les commandes qui ont un sens restent actives.
+    const fullTurn = isFullTurn(item);
+    ['Turn90m', 'Turn90', 'Turn180', 'quadBtn', 'yaw_fix'].forEach(id => { $(id).disabled = !fullTurn; });
     $('openPanoramaxBtn').href = panoramaxPictureUrl(item);
     $('revertBtn').disabled = !dirty;
 
@@ -1027,8 +1155,17 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
       const badge = document.createElement('span');
       badge.className = 'badge warn';
       badge.textContent = 'valeurs ignorées par Panoramax';
-      badge.title = 'Panoramax n\'applique la correction que si pitch et roll sont tous deux non nuls. '
+      badge.title = (item.is360
+        ? 'Panoramax n\'applique la correction d\'une photo 360° que si pitch et roll sont tous deux non nuls. '
+        : 'Panoramax n\'applique la correction d\'une photo à plat que si pitch ou roll est non nul. ')
         + 'Toute modification enregistrée ici sera envoyée de façon à être appliquée.';
+      label.appendChild(badge);
+    }
+    if (item.projection !== 'sphere') {
+      const badge = document.createElement('span');
+      badge.className = 'badge info';
+      badge.textContent = item.projection === 'flat' ? `photo à plat · ${item.hfov}°` : 'panorama recadré';
+      badge.title = 'Affichée comme dans Panoramax : sur une portion de sphère de la taille de son champ de vue.';
       label.appendChild(badge);
     }
 

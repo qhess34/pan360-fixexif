@@ -107,6 +107,13 @@ définit le domaine personnalisé.
   remplacé par 0,01° (invisible) pour que la correction soit prise en compte.
 - Comme Panoramax, l'app ignore l'orientation XMP inscrite dans le fichier image et ouvre la vue dans le
   sens de déplacement (GPS des photos voisines et `view:azimuth`).
+- **Photos non 360°** : comme dans Panoramax, une photo à plat est affichée sur une portion de sphère de
+  la taille de son champ de vue (`pers:interior_orientation.field_of_view`, 70° par défaut, 35° en
+  portrait), s'ouvre en son centre et remplit la vue. Elle est signalée par le badge « photo à plat ».
+  Les vues latérales, la vue 4 directions et Fix heading y sont désactivés ; FIX horizon, points
+  d'horizon et verticales fonctionnent. Pour ces photos, Panoramax applique la correction dès que pitch
+  **ou** roll est non nul. Les panoramas recadrés (`visible_area`, tags GPano `CroppedArea…`) sont
+  affichés avec leur recadrage.
 - Seul le propriétaire des photos (ou un administrateur) peut les modifier.
 - Le token est stocké en clair dans le stockage local du navigateur et n'est envoyé qu'à l'instance
   configurée. N'utilisez pas « Mémoriser » sur un ordinateur partagé.

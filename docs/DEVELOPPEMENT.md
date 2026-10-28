@@ -36,10 +36,11 @@ requêtes sont interceptées :
 |---|---|
 | `app.test` | fichiers du dépôt (`window.__viewer()` est injecté pour les vérifications) |
 | `cdn.jsdelivr.net` | `node_modules` (mêmes versions que l'import map) |
-| `pano.test` | `tests/fixtures/*.jpg` |
+| `pano.test` | `tests/fixtures/*.jpg` (360° de niveau, 360° incliné, photo à plat 70° inclinée) |
 | `panoramax.openstreetmap.fr` | API simulée ; les PATCH sont enregistrés et vérifiés |
 
-Les photos de test sont générées par `tools/scene.py` (`python3 tools/scene.py sortie.jpg PITCH ROLL [LARGEUR]`) :
+Les photos de test sont générées par `tools/scene.py` (`python3 tools/scene.py sortie.jpg PITCH ROLL [LARGEUR] [CHAMP]`,
+`CHAMP` produisant une photo à plat en perspective) :
 une rue avec poteaux et façades à positions connues, prise par une caméra inclinée de `PITCH`/`ROLL`.
 La correction attendue est exactement `pitch = -PITCH`, `roll = -ROLL`, ce qui permet de vérifier les
 calculs au centième de degré.
@@ -66,12 +67,33 @@ Les fonctions suivantes en sont des copies ; ne les modifiez pas sans vérifier 
 | Comportement Panoramax | Dans `app.js` |
 |---|---|
 | Correction de sphère `{pan: yaw, tilt: -pitch, roll: roll}` (radians) | `sphereCorrection()` |
-| Correction appliquée seulement si pitch **et** roll ≠ 0 (photo 360°) | `panoramaxApplies()` |
+| Correction appliquée seulement si pitch **et** roll ≠ 0 (photo 360°), pitch **ou** roll ≠ 0 (photo à plat) | `panoramaxApplies()` |
 | XMP GPano de l'image ignoré (`useXmpData: false`) | options de `new Viewer()` |
-| Vue d'ouverture : `yaw = -(view:azimuth − direction de déplacement)` | `getAzimuth()`, `relativeHeading()`, `startYaw()` |
+| Vue d'ouverture : `yaw = -(view:azimuth − direction de déplacement)` pour une 360°, centre de l'image sinon | `getAzimuth()`, `relativeHeading()`, `startYaw()` |
+| Photo à plat / panorama recadré projetés sur une portion de sphère (`getCroppedPanoData()`, `getFlatCrop()`) | `croppedPanoData()`, `projectionInfo()`, `panoDataFor()` |
+| Champ maximal `min(champ horizontal × 3/4, 90°)` | `maxFovFor()` |
 
 Photo Sphere Viewer applique la correction au conteneur du maillage avec
 `rotation.set(tilt, pan, roll, 'YXZ')` : c'est la rotation reconstruite par `currentRotation()`.
+
+### Photos non 360°
+
+`projectionInfo()` classe chaque photo à partir de `pers:interior_orientation` :
+
+- `sphere` : `field_of_view` = 360, sans recadrage. C'est le cas général.
+- `cropped` : panorama recadré. Le recadrage vient de `visible_area` + `sensor_array_dimensions`, ou des
+  tags EXIF `Xmp.GPano.CroppedArea…`. Il est mis à l'échelle de l'image réellement chargée (SD ou HD).
+- `flat` : photo à plat. Le champ horizontal vaut `field_of_view`, ou à défaut 70° (35° en portrait).
+  L'image est centrée dans un panorama virtuel de `largeur × 360 / champ` sur `hauteur × 180 / champ vertical`.
+
+Photo Sphere Viewer reçoit ce découpage par `panoData` sous forme de fonction, appelée avec l'image chargée.
+`maxFov` change d'une photo à l'autre. Photo Sphere Viewer conserve alors le champ courant : `showImage()`
+force donc un recalcul du zoom après chaque chargement.
+
+Sur une photo à plat, les angles sont répartis linéairement sur l'image. Ce n'est pas une vraie perspective,
+mais c'est ce que fait Panoramax. Une photo inclinée de 4° est ainsi redressée avec un pitch d'environ 3,5°
+(champ de 70°), et elle apparaît bien droite dans Panoramax. Les commandes sans objet (-90° / +90° / 180°,
+vue 4 directions, Fix heading) sont désactivées par `refreshUi()`.
 
 ### Valeurs affichées et valeurs envoyées
 

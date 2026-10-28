@@ -26,12 +26,14 @@ docker compose up --build   # app sur http://localhost:8080
 
 1. **Fidélité au viewer Panoramax.** L'affichage doit rester identique à `@panoramax/web-viewer` :
    - `sphereCorrection = {pan: yaw, tilt: -pitch, roll: roll}` ;
-   - correction appliquée seulement si pitch et roll ≠ 0 ;
+   - correction appliquée seulement si pitch et roll ≠ 0 (360°), pitch ou roll ≠ 0 (photo à plat) ;
    - `useXmpData: false` ;
-   - vue d'ouverture `-(view:azimuth − direction de déplacement)`.
+   - vue d'ouverture `-(view:azimuth − direction de déplacement)` (360°), centre de l'image (photo à plat) ;
+   - photos non 360° projetées sur une portion de sphère (`panoDataFor()`, copie de `getFlatCrop()` /
+     `getCroppedPanoData()`), champ maximal `min(champ × 3/4, 90°)`.
 
-   Ne modifiez `sphereCorrection()`, `panoramaxApplies()`, `relativeHeading()` ou `startYaw()` qu'après
-   avoir vérifié le code source de Panoramax.
+   Ne modifiez `sphereCorrection()`, `panoramaxApplies()`, `relativeHeading()`, `startYaw()`,
+   `projectionInfo()` ou `panoDataFor()` qu'après avoir vérifié le code source de Panoramax.
 2. **API** : le PATCH envoie `{pitch, roll, yaw}` **sans préfixe `pers:`**. Plages : pitch et roll dans
    [-90, 90], yaw dans [0, 360]. Un champ mal nommé est ignoré sans erreur par le serveur : vérifiez le
    corps envoyé, pas seulement le code HTTP.
@@ -47,10 +49,10 @@ docker compose up --build   # app sur http://localhost:8080
 ## Vérifier une modification
 
 - `npm test` couvre le chargement, les statuts, les trois outils de mise à niveau, la vue d'ouverture,
-  la règle « pitch et roll ≠ 0 » et le contenu des PATCH.
+  la règle « pitch et roll ≠ 0 », les photos à plat (projection, champ, commandes) et le contenu des PATCH.
 - Pour un comportement visuel, faites une capture avec Playwright à partir du même dispositif que
   `tests/e2e.mjs` (API simulée, photos de `tests/fixtures`).
 - Pour une photo de test à géométrie connue : `python3 tools/scene.py sortie.jpg PITCH ROLL [LARGEUR]` ;
-  la correction attendue est `-PITCH` / `-ROLL`.
+  la correction attendue est `-PITCH` / `-ROLL` (360°). Ajoutez un champ en 5e argument pour une photo à plat.
 - Mettez à jour le README (fonctionnalités, raccourcis) et `docs/DEVELOPPEMENT.md` quand le comportement
   change.
