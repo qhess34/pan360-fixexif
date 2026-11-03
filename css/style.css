@@ -568,3 +568,17 @@ body {
   background: rgba(217, 83, 79, .25);
 }
 .fix-ignored:hover:not(:disabled) { background: rgba(217, 83, 79, .45); }
+
+/* --- Navigation entre séquences --- */
+.seq-nav { display: flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; }
+.seq-title {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid #4a4d55;
+}

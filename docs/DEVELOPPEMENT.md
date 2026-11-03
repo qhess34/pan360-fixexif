@@ -107,7 +107,8 @@ vue 4 directions, Fix heading) sont désactivées par `refreshUi()`.
 | Appel | Usage |
 |---|---|
 | `GET /api/collections/{cid}/items?limit=100` | Photos de la séquence ; pagination via le lien `rel=next` |
-| `GET /api/users/me/collection` | « Mes séquences » (liens `rel=child`) |
+| `GET /api/collections/{cid}` | Nom (`title`) de la séquence chargée |
+| `GET /api/users/me/collection` | « Mes séquences » et navigation ⏮ / ⏭ (liens `rel=child`, pagination `rel=next`) |
 | `PATCH /api/collections/{cid}/items/{id}` | Enregistrement, corps JSON `{pitch, roll, yaw}` |
 
 - Le serveur (`geovisio`, `PatchItemParameter`) attend `pitch` et `roll` dans [-90, 90] et `yaw` dans [0, 360],
@@ -141,6 +142,15 @@ Le fichier est découpé en sections commentées, dans cet ordre :
 
 `refreshUi()` est le point unique de mise à jour de l'interface après un changement d'état. Elle
 rafraîchit aussi la bande de miniatures et planifie le redessin de la courbe.
+
+### Navigation entre séquences (`mySequences()`, `goSequence()`)
+
+`mySequences()` lit les séquences de l'utilisateur et les trie dans l'ordre naturel de leur nom
+(`localeCompare` avec `numeric: true` : `_2` avant `_10`). Le résultat est gardé en cache dans
+`state.mySeqs` tant que l'instance et le token ne changent pas. Au chargement d'une séquence,
+`showSequenceTitle()` lit son nom (`GET /api/collections/{cid}`), l'affiche dans la barre du haut et le
+titre de l'onglet, puis active ⏮ / ⏭ si la séquence fait partie de celles de l'utilisateur.
+Les modifications en attente sont conservées par séquence (`pfx.edits.<collectionId>`).
 
 ### Correction groupée des valeurs ignorées (`fixIgnored()`)
 
