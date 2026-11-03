@@ -20,6 +20,15 @@ const NM = path.join(ROOT, 'node_modules');
 const API = 'https://panoramax.openstreetmap.fr';
 const CID = '11111111-2222-3333-4444-555555555555';
 const pid = i => `aaaaaaaa-0000-0000-0000-00000000000${i}`;
+// Séquences de l'utilisateur, volontairement dans le désordre : l'ordre naturel attendu est _1, _2, _3, _9, _10.
+const seqId = n => `11111111-2222-3333-4444-${String(n).padStart(12, '0')}`;
+const SEQS = [
+  { id: seqId(10), title: '20250102_10' },
+  { id: CID, title: '20250102_2' },
+  { id: seqId(1), title: '20250102_1' },
+  { id: seqId(9), title: '20250102_9' },
+  { id: seqId(3), title: '20250102_3' },
+];
 const TILT = [4, -3];
 
 // Photos : 0 = déjà corrigée, 1 = inclinée non corrigée, 2 = valeurs ignorées par Panoramax
@@ -95,7 +104,15 @@ await page.route('**/*', async route => {
       patches.push({ id: path.basename(url.pathname), auth: req.headers().authorization, body: JSON.parse(req.postData()) });
       return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: '{}' });
     }
-    return route.fulfill({ headers: CORS, contentType: 'application/geo+json', body: JSON.stringify({ features }) });
+    const json = body => route.fulfill({ headers: CORS, contentType: 'application/geo+json', body: JSON.stringify(body) });
+    if (url.pathname === '/api/users/me/collection') {
+      return json({ links: SEQS.map(q => ({ rel: 'child', href: `${API}/api/collections/${q.id}`, title: q.title })) });
+    }
+    const m = url.pathname.match(/^\/api\/collections\/([^/]+)(\/items)?$/);
+    if (m && !m[2]) return json({ id: m[1], title: SEQS.find(q => q.id === m[1])?.title });
+    // Autres séquences : deux photos suffisent
+    if (m && m[1] !== CID) return json({ features: features.slice(0, 2).map(f => ({ ...f, collection: m[1] })) });
+    return json({ features });
   }
   return route.abort();
 });
@@ -299,6 +316,33 @@ await page.keyboard.press('KeyV');
 await page.waitForTimeout(1500);
 check('ignorées corrigées : PATCH pitch / roll 0 → 0,01, yaw conservé',
   patches.length === 1 && JSON.stringify(patches[0].body) === '{"pitch":0.01,"roll":0.01,"yaw":90}', JSON.stringify(patches[0]?.body));
+
+// Navigation entre séquences (ordre naturel des noms) et nom de la séquence en cours.
+await page.waitForFunction(() => document.getElementById('seqTitle').textContent === '20250102_2', null, { timeout: 5000 }).catch(() => {});
+const seqNav = () => page.evaluate(() => ({
+  title: document.getElementById('seqTitle').textContent,
+  prev: !document.getElementById('prevSeqBtn').disabled,
+  next: !document.getElementById('nextSeqBtn').disabled,
+  seq: new URLSearchParams(location.hash.slice(1)).get('seq'),
+}));
+let nav = await seqNav();
+check('séquence : nom affiché, précédente et suivante actives', nav.title === '20250102_2' && nav.prev && nav.next, JSON.stringify(nav));
+const goSeq = async id => {
+  await page.evaluate(b => document.getElementById(b).click(), id);
+  await page.waitForTimeout(1500);
+  return seqNav();
+};
+nav = await goSeq('nextSeqBtn');
+check('séquence suivante : 20250102_3 (ordre naturel, pas _10)', nav.title === '20250102_3' && nav.seq === seqId(3), JSON.stringify(nav));
+nav = await goSeq('nextSeqBtn');
+nav = await goSeq('nextSeqBtn');
+check('séquence suivante : 20250102_10 en dernier', nav.title === '20250102_10' && !nav.next && nav.prev, JSON.stringify(nav));
+nav = await goSeq('prevSeqBtn');
+check('séquence précédente : 20250102_9', nav.title === '20250102_9', JSON.stringify(nav));
+check('titre de l\'onglet', (await page.title()).startsWith('20250102_9'));
+await page.evaluate(() => document.getElementById('mySeqBtn').click());
+await page.waitForTimeout(500);
+check('« Mes séquences » liste les 5 séquences', (await page.locator('#mySeqList li').count()) === 5);
 
 await browser.close();
 console.log(failures ? `\n${failures} échec(s)` : '\nTous les tests passent.');

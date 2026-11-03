@@ -92,6 +92,8 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     index: 0,
     edits: {},      // id -> {pitch, roll, yaw} (modifications non synchronisées)
     synced: new Set(), // photos envoyées pendant cette session
+    seqTitle: '',      // nom de la séquence en cours
+    mySeqs: null,      // séquences de l'utilisateur, triées : {key, list: [{id, title, link}]}
     carry: null,       // dernière correction faite à la main : {values, index}, voir carryCorrection()
     carried: new Set(), // photos remplies automatiquement par le report (pas retouchées à la main)
     noCarry: new Set(), // photos annulées à la main : le report ne les remplit plus
@@ -379,6 +381,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
       state.carried = new Set();
       state.noCarry = new Set();
       buildStrip();
+      showSequenceTitle(instance, collectionId);
       $('controls').classList.remove('disabled');
       $('total').textContent = items.length;
       $('indexInput').max = items.length;
@@ -1132,14 +1135,13 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     }
     showLoader('Recherche de vos séquences…');
     try {
-      const data = await apiFetch(`${apiBase(settings.instance)}/users/me/collection?limit=1000`);
-      const children = (data.links || []).filter(l => l.rel === 'child');
+      const seqs = await mySequences(true);
       const list = $('mySeqList');
       list.innerHTML = '';
-      if (!children.length) {
+      if (!seqs.length) {
         list.innerHTML = '<li>Aucune séquence trouvée.</li>';
       }
-      children
+      seqs.map(seq => seq.link)
         .sort((a, b) => String(b['stats:datetime'] || b.updated || '').localeCompare(String(a['stats:datetime'] || a.updated || '')))
         .forEach(link => {
           const m = (link.href || link.id || '').match(UUID_RE);
@@ -1166,6 +1168,82 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     } finally {
       hideLoader();
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Navigation entre séquences
+  // ---------------------------------------------------------------------------
+  // Les séquences de l'utilisateur (GET /api/users/me/collection, liens rel=child) sont triées dans
+  // l'ordre naturel de leur nom : 20250102_1, 20250102_2, …, 20250102_9, 20250102_10.
+
+  const naturalCompare = (a, b) => a.localeCompare(b, 'fr', { numeric: true, sensitivity: 'base' });
+
+  /** Séquences de l'utilisateur sur l'instance configurée, en cache tant que l'instance et le token ne changent pas. */
+  async function mySequences(refresh = false) {
+    const key = settings.instance + '|' + settings.token;
+    if (!refresh && state.mySeqs && state.mySeqs.key === key) return state.mySeqs.list;
+    const list = [];
+    const seen = new Set();
+    let url = `${apiBase(settings.instance)}/users/me/collection?limit=1000`;
+    while (url && !seen.has(url)) {
+      seen.add(url);
+      const data = await apiFetch(url);
+      for (const link of data.links || []) {
+        if (link.rel !== 'child') continue;
+        const m = (link.href || link.id || '').match(UUID_RE);
+        if (m) list.push({ id: m[0].toLowerCase(), title: link.title || m[0], link });
+      }
+      const next = (data.links || []).find(l => l.rel === 'next');
+      url = next ? next.href : null;
+    }
+    list.sort((a, b) => naturalCompare(a.title, b.title) || naturalCompare(a.id, b.id));
+    state.mySeqs = { key, list };
+    return list;
+  }
+
+  const sameInstance = (a, b) => a.replace(/\/+$/, '') === b.replace(/\/+$/, '');
+
+  /** Affiche le nom de la séquence chargée et active les boutons séquence précédente / suivante. */
+  async function showSequenceTitle(instance, collectionId) {
+    state.seqTitle = '';
+    updateSeqNav();
+    $('seqNav').hidden = false;
+    try {
+      const col = await apiGet(`${apiBase(instance)}/collections/${collectionId}`);
+      if (state.collectionId === collectionId) state.seqTitle = col.title || '';
+    } catch (e) { /* le nom viendra de la liste des séquences si possible */ }
+    if (settings.token && sameInstance(instance, settings.instance)) {
+      try { await mySequences(); } catch (e) { console.warn('Liste des séquences indisponible', e); }
+    }
+    if (state.collectionId === collectionId) updateSeqNav();
+  }
+
+  function seqPosition() {
+    const list = state.mySeqs && sameInstance(state.instance, settings.instance) ? state.mySeqs.list : [];
+    return { list, i: list.findIndex(s => s.id === state.collectionId) };
+  }
+
+  function updateSeqNav() {
+    const { list, i } = seqPosition();
+    const title = state.seqTitle || (i >= 0 ? list[i].title : '') || state.collectionId || '';
+    $('seqTitle').textContent = title;
+    $('seqTitle').title = `Séquence en cours de modification : ${title}` + (i >= 0 ? ` (${i + 1} / ${list.length})` : '');
+    document.title = title ? `${title} — Pan360 FixExif` : 'Pan360 FixExif';
+    const reason = !settings.token ? 'Token nécessaire pour connaître vos séquences'
+      : i < 0 ? 'Cette séquence ne fait pas partie de vos séquences' : '';
+    $('prevSeqBtn').disabled = i <= 0;
+    $('nextSeqBtn').disabled = i < 0 || i >= list.length - 1;
+    $('prevSeqBtn').title = reason || (i > 0 ? `Séquence précédente : ${list[i - 1].title}` : 'Première séquence');
+    $('nextSeqBtn').title = reason || (i < list.length - 1 ? `Séquence suivante : ${list[i + 1].title}` : 'Dernière séquence');
+  }
+
+  function goSequence(delta) {
+    const { list, i } = seqPosition();
+    const target = i >= 0 ? list[i + delta] : null;
+    if (!target || state.busy) return;
+    const pending = state.items.filter(isDirty).length;
+    if (pending) toast(`${pending} modification(s) non envoyée(s) conservée(s) dans ce navigateur pour « ${$('seqTitle').textContent} ».`, '', 5000);
+    loadSequence(state.instance, target.id);
   }
 
   // ---------------------------------------------------------------------------
@@ -1281,6 +1359,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     saveSettings();
     if (!state.collectionId) state.instance = settings.instance;
     if (qualityChanged && state.items.length) showImage(state.index);
+    if (state.collectionId) showSequenceTitle(state.instance, state.collectionId); // token / instance modifiés
     toast('Paramètres enregistrés.', 'ok');
   });
 
@@ -1299,6 +1378,8 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     settings.carry = carrySetting(false);
     document.querySelectorAll('[data-carry]').forEach(cb => { cb.checked = false; });
     state.edits = {};
+    state.mySeqs = null;
+    if (state.collectionId) updateSeqNav();
     $('settingsDialog').close();
     if (state.items.length) { applyPose(); refreshUi(); }
     toast('Données locales effacées.', 'ok');
@@ -1351,6 +1432,8 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     };
   });
   $('nextDirtyBtn').onclick = nextDirty;
+  $('prevSeqBtn').onclick = () => goSequence(-1);
+  $('nextSeqBtn').onclick = () => goSequence(1);
   $('fixIgnoredBtn').onclick = fixIgnored;
   $('yaw_fix').onclick = fixYaw;
   $('fullscreenBtn').onclick = () => {

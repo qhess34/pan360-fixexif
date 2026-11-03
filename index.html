@@ -6,12 +6,17 @@
   <title>Pan360 FixExif</title>
   <meta name="description" content="Corrigez en WYSIWYG le pitch / roll / yaw de vos photos 360° Panoramax.">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5.15.1/index.css">
-  <link rel="stylesheet" href="css/style.css?v=14">
+  <link rel="stylesheet" href="css/style.css?v=15">
 </head>
 <body>
 
 <header class="topbar">
   <div class="brand">Pan360 <span>FixExif</span></div>
+  <div class="seq-nav" id="seqNav" hidden>
+    <button id="prevSeqBtn" class="icon" title="Séquence précédente (ordre naturel des noms)">⏮</button>
+    <span id="seqTitle" class="seq-title" title="Séquence en cours de modification"></span>
+    <button id="nextSeqBtn" class="icon" title="Séquence suivante (ordre naturel des noms)">⏭</button>
+  </div>
   <form id="seqForm" class="seq-form">
     <input id="seqInput" type="text" placeholder="URL ou identifiant de séquence Panoramax" autocomplete="off" spellcheck="false">
     <button type="submit" class="primary">Charger</button>
@@ -241,6 +246,6 @@
   }
 }
 </script>
-<script type="module" src="js/app.js?v=14"></script>
+<script type="module" src="js/app.js?v=15"></script>
 </body>
 </html>

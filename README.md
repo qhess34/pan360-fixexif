@@ -50,6 +50,10 @@ Les outils d'horizon ne modifient jamais le yaw, et les repères cliqués resten
 
 ### Suivi de la séquence
 
+- **Séquence en cours** : son nom est affiché dans la barre du haut, entre les boutons **⏮ / ⏭** qui
+  passent à la séquence précédente / suivante parmi **vos** séquences, dans l'ordre naturel des noms
+  (`20250102_1, 2, 3 … 9, 10`). Il faut le token. Les modifications non envoyées de la séquence quittée
+  restent enregistrées dans le navigateur.
 - **Miniatures** : chaque photo porte un statut — en attente d'envoi, synchronisée, déjà corrigée,
   ignorée par Panoramax, non corrigée. Boutons **Non corrigée ⏭** (N) et **Modifiée ⏭** (M).
 - **Courbe pitch / roll** : repère les photos qui sortent de la tendance ; survol = valeurs, clic = ouvre la photo.
