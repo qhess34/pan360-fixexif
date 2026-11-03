@@ -244,7 +244,11 @@ const flatBody = patches[0]?.body;
 check('photo à plat : PATCH sans 0,01 sur le roll', patches.length === 1 && flatBody.pitch !== 0 && flatBody.roll === 0, JSON.stringify(flatBody));
 
 // Report de la dernière correction (photo à plat : pitch -3,49) sur les photos suivantes non corrigées.
-await page.evaluate(() => document.getElementById('carryChk').click());
+/** Coche exactement les axes donnés pour le report (les autres sont décochés). */
+const setCarry = (...axes) => page.evaluate(on => document.querySelectorAll('[data-carry]').forEach(cb => {
+  if (cb.checked !== on.includes(cb.dataset.carry)) cb.click();
+}), axes);
+await setCarry('pitch', 'roll', 'yaw');
 const statusOf = i => page.evaluate(n => document.querySelectorAll('.thumb')[n].className.match(/st-(\w+)/)[1], i);
 await page.keyboard.press('KeyC');
 await page.waitForTimeout(800);
@@ -256,20 +260,23 @@ await page.waitForTimeout(800);
 [p, r] = await values();
 check('report : photo 6 déjà corrigée reçoit aussi la correction', p === -2.49 && r === 0 && (await statusOf(5)) === 'pending', `${p} / ${r}`);
 await page.evaluate(() => document.querySelector('[data-axis=roll][data-step="1"]').click()); // modif. manuelle : roll 1
+await setCarry('pitch'); // pitch seul : le roll de 1 ne doit pas être reporté
 await page.keyboard.press('KeyC');
 await page.waitForTimeout(800);
+[p, r] = await values();
+check('report par axe : pitch seul reporté', p === -2.49 && r === 0, `${p} / ${r}`);
 await page.keyboard.press('KeyZ'); // retour arrière (W en AZERTY) : la photo 6, modifiée à la main, est conservée
 await page.waitForTimeout(800);
 [p, r] = await values();
 check('report : photo modifiée à la main jamais écrasée', p === -2.49 && r === 1, `${p} / ${r}`);
-await page.evaluate(() => document.getElementById('carryChk').click()); // décoche…
+await setCarry(); // décoche tout…
 await page.evaluate(() => document.querySelector('[data-reset="roll"]').click()); // …remet roll à 0 sur la photo 6…
-await page.evaluate(() => document.getElementById('carryChk').click()); // …et recoche
+await setCarry('pitch', 'roll', 'yaw'); // …et recoche les trois axes
 await page.keyboard.press('KeyC');
 await page.waitForTimeout(800);
 [p, r] = await values();
 check('report : photo 7 reçoit la correction la plus récente', p === -2.49 && r === 0 && (await statusOf(6)) === 'pending', `${p} / ${r}`);
-await page.evaluate(() => document.getElementById('carryChk').click());
+await setCarry();
 patches.length = 0;
 await page.keyboard.press('KeyV');
 await page.waitForTimeout(2000);

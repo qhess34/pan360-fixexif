@@ -556,3 +556,5 @@ body {
 /* --- Report de la correction sur les photos suivantes --- */
 .carry { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--fg); cursor: pointer; white-space: nowrap; }
 .carry input { accent-color: var(--accent); margin: 0; }
+.carry { gap: 8px; }
+.carry label { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }

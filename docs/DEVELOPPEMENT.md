@@ -144,7 +144,9 @@ rafraîchit aussi la bande de miniatures et planifie le redessin de la courbe.
 
 ### Report de la dernière correction (`carryCorrection()`)
 
-Coche « Reporter la dernière correction sur les suivantes » (`settings.carry`, clé `pfx.carry`).
+Coches « Reporter sur les suivantes : Pitch / Roll / Yaw » (`settings.carry = {pitch, roll, yaw}`, clé
+`pfx.carry`). `carrySetting()` convertit l'ancien format, un booléen unique (`true` = les trois axes).
+Seuls les axes cochés sont copiés ; les autres gardent la valeur courante de la photo.
 
 - Chaque modification manuelle (`setValues()`) mémorise ses valeurs et la position de la photo dans
   `state.carry`.
@@ -177,7 +179,7 @@ ensuite tournée de la plus petite rotation qui amène `u` sur la verticale de l
 | `pfx.remember` | Choix « Mémoriser » |
 | `pfx.quality` | `sd` ou `hd` |
 | `pfx.quad` | Vue 4 directions activée |
-| `pfx.carry` | Report de la dernière correction activé |
+| `pfx.carry` | Axes reportés sur les photos suivantes `{pitch, roll, yaw}` |
 | `pfx.lastSequence` | Dernière séquence chargée |
 | `pfx.edits.<collectionId>` | Modifications non envoyées `{idPhoto: {pitch, roll, yaw}}` |
 
