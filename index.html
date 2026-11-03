@@ -6,7 +6,7 @@
   <title>Pan360 FixExif</title>
   <meta name="description" content="Corrigez en WYSIWYG le pitch / roll / yaw de vos photos 360° Panoramax.">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5.15.1/index.css">
-  <link rel="stylesheet" href="css/style.css?v=13">
+  <link rel="stylesheet" href="css/style.css?v=14">
 </head>
 <body>
 
@@ -73,6 +73,7 @@
           <span class="lg lg-ignored">ignorée par Panoramax</span>
           <span class="lg lg-raw">non corrigée</span>
         </span>
+        <button id="fixIgnoredBtn" class="fix-ignored" hidden title="Photos dont pitch ou roll vaut 0 : Panoramax ignore alors toute leur correction. Remplace l'angle nul par 0,01° pour que leurs valeurs soient appliquées (envoi avec Synchroniser).">⚠ Corriger les <span id="ignoredCount">0</span> ignorées</button>
         <span class="sep"></span>
         <span class="carry" title="En arrivant sur une photo suivante, lui appliquer automatiquement la dernière correction faite, pour les axes cochés, y compris si elle est déjà corrigée sur Panoramax. Les photos modifiées ou envoyées pendant la session ne sont pas écrasées.">
           Reporter sur les suivantes :
@@ -240,6 +241,6 @@
   }
 }
 </script>
-<script type="module" src="js/app.js?v=13"></script>
+<script type="module" src="js/app.js?v=14"></script>
 </body>
 </html>

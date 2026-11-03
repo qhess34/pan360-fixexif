@@ -53,6 +53,10 @@ Les outils d'horizon ne modifient jamais le yaw, et les repères cliqués resten
 - **Miniatures** : chaque photo porte un statut — en attente d'envoi, synchronisée, déjà corrigée,
   ignorée par Panoramax, non corrigée. Boutons **Non corrigée ⏭** (N) et **Modifiée ⏭** (M).
 - **Courbe pitch / roll** : repère les photos qui sortent de la tendance ; survol = valeurs, clic = ouvre la photo.
+- **⚠ Corriger les N ignorées** (au-dessus des miniatures, affiché seulement si besoin) : repère toutes
+  les photos dont les valeurs sont ignorées par Panoramax (pitch ou roll à 0, voir « Bon à savoir »)
+  et, en un clic, remplace l'angle nul par 0,01° pour que leurs valeurs existantes soient appliquées.
+  Les photos passent « en attente » : **Synchroniser** les envoie.
 - **Reporter sur les suivantes : Pitch / Roll / Yaw** (coches au-dessus des miniatures) : en avançant
   dans la séquence, chaque photo suivante reçoit automatiquement, pour les axes cochés, les valeurs de la
   dernière photo que vous avez corrigée, y compris si elle était déjà corrigée sur Panoramax. Les axes non
