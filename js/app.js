@@ -56,9 +56,16 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     remember: store.get('remember', false),
     quality: store.get('quality', 'sd'),
     quad: store.get('quad', false),
-    carry: store.get('carry', false),
+    carry: carrySetting(store.get('carry', false)),
     token: store.get('token', '') || store.get('token', '', sessionStorage),
   };
+
+  /** Axes reportés sur les photos suivantes. Ancien format (booléen unique) : true = les trois axes. */
+  function carrySetting(raw) {
+    const all = raw === true;
+    const o = raw && typeof raw === 'object' ? raw : {};
+    return { pitch: all || !!o.pitch, roll: all || !!o.roll, yaw: all || !!o.yaw };
+  }
 
   function saveSettings() {
     store.set('instance', settings.instance);
@@ -439,17 +446,18 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   function carryCorrection(index) {
     const item = state.items[index];
     const c = state.carry;
-    if (!settings.carry || !c || !item || index <= c.index || state.noCarry.has(item.id)) return;
+    // Seuls les axes cochés (pitch / roll / yaw) sont reportés ; les autres gardent la valeur de la photo.
+    const axes = ['pitch', 'roll', 'yaw'].filter(k => settings.carry[k]);
+    if (!axes.length || !c || !item || index <= c.index || state.noCarry.has(item.id)) return;
     const status = itemStatus(item);
     if (!['raw', 'ignored', 'corrected'].includes(status) && !(status === 'pending' && state.carried.has(item.id))) return;
-    const prev = state.edits[item.id];
-    if (prev && ['pitch', 'roll', 'yaw'].every(k => same(prev[k], c.values[k]))) return; // déjà à jour
-    state.edits[item.id] = { ...c.values };
+    const current = values(item);
+    if (axes.every(k => same(current[k], c.values[k]))) return; // déjà à jour
+    state.edits[item.id] = { ...current, ...Object.fromEntries(axes.map(k => [k, c.values[k]])) };
     if (!isDirty(item)) { delete state.edits[item.id]; state.carried.delete(item.id); return; }
     state.carried.add(item.id);
     persistEdits();
-    toast(`Correction de la photo ${c.index + 1} reportée : pitch ${fmt(c.values.pitch)}°, roll ${fmt(c.values.roll)}°`
-      + (c.values.yaw ? `, yaw ${fmt(c.values.yaw)}°` : ''), 'ok', 2500);
+    toast(`Correction de la photo ${c.index + 1} reportée : ${axes.map(k => `${k} ${fmt(c.values[k])}°`).join(', ')}`, 'ok', 2500);
     state.carry = { ...c, index };
   }
 
@@ -1265,8 +1273,8 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     settings.token = '';
     settings.remember = false;
     settings.quality = 'sd';
-    settings.carry = false;
-    $('carryChk').checked = false;
+    settings.carry = carrySetting(false);
+    document.querySelectorAll('[data-carry]').forEach(cb => { cb.checked = false; });
     state.edits = {};
     $('settingsDialog').close();
     if (state.items.length) { applyPose(); refreshUi(); }
@@ -1310,13 +1318,15 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   $('quadBtn').onclick = () => setQuad(!settings.quad);
   quadCells().forEach(cell => { cell.onclick = () => lookAt(Number(cell.dataset.dir)); });
   $('nextRawBtn').onclick = nextRaw;
-  $('carryChk').checked = settings.carry;
-  $('carryChk').onchange = e => {
-    settings.carry = e.target.checked;
-    saveSettings();
-    e.target.blur(); // les raccourcis clavier restent actifs
-    if (settings.carry && !state.carry) toast('Corrigez une photo : sa correction sera reportée sur les suivantes non corrigées.');
-  };
+  document.querySelectorAll('[data-carry]').forEach(cb => {
+    cb.checked = settings.carry[cb.dataset.carry];
+    cb.onchange = () => {
+      settings.carry = { ...settings.carry, [cb.dataset.carry]: cb.checked };
+      saveSettings();
+      cb.blur(); // les raccourcis clavier restent actifs
+      if (cb.checked && !state.carry) toast('Corrigez une photo : sa correction sera reportée sur les suivantes.');
+    };
+  });
   $('nextDirtyBtn').onclick = nextDirty;
   $('yaw_fix').onclick = fixYaw;
   $('fullscreenBtn').onclick = () => {
