@@ -552,3 +552,7 @@ body {
 .repo-link:hover { color: var(--fg); }
 @media (max-width: 700px) { .repo-link span { display: none; } }
 #filename .badge.info { background: var(--bg-3); color: var(--fg); border: 1px solid #555; }
+
+/* --- Report de la correction sur les photos suivantes --- */
+.carry { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--fg); cursor: pointer; white-space: nowrap; }
+.carry input { accent-color: var(--accent); margin: 0; }

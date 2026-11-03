@@ -49,7 +49,8 @@ docker compose up --build   # app sur http://localhost:8080
 ## Vérifier une modification
 
 - `npm test` couvre le chargement, les statuts, les trois outils de mise à niveau, la vue d'ouverture,
-  la règle « pitch et roll ≠ 0 », les photos à plat (projection, champ, commandes) et le contenu des PATCH.
+  la règle « pitch et roll ≠ 0 », les photos à plat (projection, champ, commandes), le report de la dernière
+  correction et le contenu des PATCH.
 - Pour un comportement visuel, faites une capture avec Playwright à partir du même dispositif que
   `tests/e2e.mjs` (API simulée, photos de `tests/fixtures`).
 - Pour une photo de test à géométrie connue : `python3 tools/scene.py sortie.jpg PITCH ROLL [LARGEUR]` ;

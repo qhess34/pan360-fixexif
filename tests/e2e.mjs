@@ -31,6 +31,10 @@ const PICS = [
   { img: 'tilt-4-3.jpg', pitch: 0, roll: 0, azimuth: 0 },
   { img: 'tilt-4-3.jpg', pitch: 2, roll: 0, azimuth: 180 },
   { img: 'flat-tilt-4-3.jpg', pitch: 0, roll: 0, azimuth: 90, flat: true },
+  // 4 à 6 : report de la dernière correction sur les suivantes (5 est déjà corrigée sur Panoramax)
+  { img: 'tilt-4-3.jpg', pitch: 0, roll: 0, azimuth: 0 },
+  { img: 'level.jpg', pitch: 0.01, roll: 0.01, azimuth: 0 },
+  { img: 'tilt-4-3.jpg', pitch: 0, roll: 0, azimuth: 0 },
 ];
 const features = PICS.map((p, i) => ({
   type: 'Feature',
@@ -139,9 +143,9 @@ await page.reload();
 await ready();
 await page.waitForTimeout(800);
 
-check('séquence chargée', (await page.textContent('#total')) === '4');
+check('séquence chargée', (await page.textContent('#total')) === '7');
 const statuses = await page.evaluate(() => [...document.querySelectorAll('.thumb')].map(t => t.className.match(/st-(\w+)/)[1]));
-check('statuts des miniatures', statuses.join() === 'corrected,raw,ignored,raw', statuses.join());
+check('statuts des miniatures', statuses.join() === 'corrected,raw,ignored,raw,raw,corrected,raw', statuses.join());
 
 // Verticales : deux poteaux dans des directions différentes.
 await page.keyboard.press('KeyJ');
@@ -191,7 +195,7 @@ check('PATCH photo 2 : pitch / roll / yaw', JSON.stringify(Object.keys(byId[pid(
   JSON.stringify(byId[pid(1)]?.body));
 check('PATCH photo 3 : roll 0 → 0,01', byId[pid(2)]?.body.pitch === 3 && byId[pid(2)]?.body.roll === 0.01, JSON.stringify(byId[pid(2)]?.body));
 const finalStatuses = await page.evaluate(() => [...document.querySelectorAll('.thumb')].map(t => t.className.match(/st-(\w+)/)[1]));
-check('statuts après synchronisation', finalStatuses.join() === 'corrected,synced,synced,raw', finalStatuses.join());
+check('statuts après synchronisation', finalStatuses.join() === 'corrected,synced,synced,raw,raw,corrected,raw', finalStatuses.join());
 
 // Photo 4 : photo à plat, affichée comme Panoramax sur une portion de sphère de 70°.
 await page.evaluate(() => { if (!document.body.classList.contains('quad-on')) document.getElementById('quadBtn').click(); });
@@ -238,6 +242,40 @@ await page.keyboard.press('KeyV');
 await page.waitForTimeout(1500);
 const flatBody = patches[0]?.body;
 check('photo à plat : PATCH sans 0,01 sur le roll', patches.length === 1 && flatBody.pitch !== 0 && flatBody.roll === 0, JSON.stringify(flatBody));
+
+// Report de la dernière correction (photo à plat : pitch -3,49) sur les photos suivantes non corrigées.
+await page.evaluate(() => document.getElementById('carryChk').click());
+const statusOf = i => page.evaluate(n => document.querySelectorAll('.thumb')[n].className.match(/st-(\w+)/)[1], i);
+await page.keyboard.press('KeyC');
+await page.waitForTimeout(800);
+[p, r, y] = await values();
+check('report : photo 5 reçoit la dernière correction', p === -3.49 && r === 0 && (await statusOf(4)) === 'pending', `${p} / ${r} / ${y}`);
+await page.evaluate(() => document.querySelector('[data-axis=pitch][data-step="1"]').click()); // nouvelle correction : -2,49
+await page.keyboard.press('KeyC');
+await page.waitForTimeout(800);
+[p, r] = await values();
+check('report : photo 6 déjà corrigée reçoit aussi la correction', p === -2.49 && r === 0 && (await statusOf(5)) === 'pending', `${p} / ${r}`);
+await page.evaluate(() => document.querySelector('[data-axis=roll][data-step="1"]').click()); // modif. manuelle : roll 1
+await page.keyboard.press('KeyC');
+await page.waitForTimeout(800);
+await page.keyboard.press('KeyZ'); // retour arrière (W en AZERTY) : la photo 6, modifiée à la main, est conservée
+await page.waitForTimeout(800);
+[p, r] = await values();
+check('report : photo modifiée à la main jamais écrasée', p === -2.49 && r === 1, `${p} / ${r}`);
+await page.evaluate(() => document.getElementById('carryChk').click()); // décoche…
+await page.evaluate(() => document.querySelector('[data-reset="roll"]').click()); // …remet roll à 0 sur la photo 6…
+await page.evaluate(() => document.getElementById('carryChk').click()); // …et recoche
+await page.keyboard.press('KeyC');
+await page.waitForTimeout(800);
+[p, r] = await values();
+check('report : photo 7 reçoit la correction la plus récente', p === -2.49 && r === 0 && (await statusOf(6)) === 'pending', `${p} / ${r}`);
+await page.evaluate(() => document.getElementById('carryChk').click());
+patches.length = 0;
+await page.keyboard.press('KeyV');
+await page.waitForTimeout(2000);
+const carried = Object.fromEntries(patches.map(x => [x.id, x.body]));
+check('report : PATCH des photos 5, 6 et 7 (roll 0 → 0,01 en 360°)', patches.length === 3
+  && [4, 5, 6].every(i => carried[pid(i)]?.pitch === -2.49 && carried[pid(i)]?.roll === 0.01), JSON.stringify(carried));
 
 await browser.close();
 console.log(failures ? `\n${failures} échec(s)` : '\nTous les tests passent.');

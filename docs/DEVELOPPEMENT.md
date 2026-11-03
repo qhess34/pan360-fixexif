@@ -123,7 +123,8 @@ Le fichier est découpé en sections commentées, dans cet ordre :
 
 1. **Stockage local** — `store` (préfixe `pfx.`, accès toujours protégé par `try/catch`), `settings`.
 2. **État** — `state` : instance, `collectionId`, `items`, `index`, `edits` (modifications non envoyées,
-   par id de photo), `synced` (photos envoyées pendant la session).
+   par id de photo), `synced` (photos envoyées pendant la session), et pour le report de correction :
+   `carry`, `carried`, `noCarry` (voir ci-dessous).
 3. **Lecture d'une séquence** — `parseSequenceInput()`, `featureToItem()`, `loadSequence()`.
 4. **Valeurs courantes** — `values(item)` = valeurs Panoramax + modifications ; `setValues()` borne,
    arrondit au centième, normalise le yaw dans [0, 360) et persiste.
@@ -140,6 +141,20 @@ Le fichier est découpé en sections commentées, dans cet ordre :
 
 `refreshUi()` est le point unique de mise à jour de l'interface après un changement d'état. Elle
 rafraîchit aussi la bande de miniatures et planifie le redessin de la courbe.
+
+### Report de la dernière correction (`carryCorrection()`)
+
+Coche « Reporter la dernière correction sur les suivantes » (`settings.carry`, clé `pfx.carry`).
+
+- Chaque modification manuelle (`setValues()`) mémorise ses valeurs et la position de la photo dans
+  `state.carry`.
+- `showImage()` appelle `carryCorrection(index)` avant l'affichage. Une photo **après** `state.carry.index`
+  reçoit une copie des valeurs si son statut est `raw`, `ignored` ou `corrected`, ou si elle a déjà été
+  remplie par le report (`state.carried`), afin de suivre la correction la plus récente.
+- Ne sont jamais écrasées : les photos modifiées à la main (retirées de `carried` par `setValues()`),
+  les photos envoyées (`synced`) et les photos annulées après un report (`state.noCarry`).
+- Ces ensembles ne sont pas conservés au rechargement : après rechargement, toutes les modifications en
+  attente sont considérées comme manuelles.
 
 ### Mise à niveau par repères (`solveLevel()`)
 
@@ -162,6 +177,7 @@ ensuite tournée de la plus petite rotation qui amène `u` sur la verticale de l
 | `pfx.remember` | Choix « Mémoriser » |
 | `pfx.quality` | `sd` ou `hd` |
 | `pfx.quad` | Vue 4 directions activée |
+| `pfx.carry` | Report de la dernière correction activé |
 | `pfx.lastSequence` | Dernière séquence chargée |
 | `pfx.edits.<collectionId>` | Modifications non envoyées `{idPhoto: {pitch, roll, yaw}}` |
 
