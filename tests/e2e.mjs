@@ -35,6 +35,8 @@ const PICS = [
   { img: 'tilt-4-3.jpg', pitch: 0, roll: 0, azimuth: 0 },
   { img: 'level.jpg', pitch: 0.01, roll: 0.01, azimuth: 0 },
   { img: 'tilt-4-3.jpg', pitch: 0, roll: 0, azimuth: 0 },
+  // 7 : yaw seul (pitch = roll = 0) → valeurs ignorées par Panoramax, corrigées par « Corriger les ignorées »
+  { img: 'level.jpg', pitch: 0, roll: 0, yaw: 90, azimuth: 0 },
 ];
 const features = PICS.map((p, i) => ({
   type: 'Feature',
@@ -46,7 +48,7 @@ const features = PICS.map((p, i) => ({
     'view:azimuth': p.azimuth,
     'pers:pitch': p.pitch,
     'pers:roll': p.roll,
-    'pers:yaw': 0,
+    'pers:yaw': p.yaw || 0,
     'pers:interior_orientation': p.flat
       ? { field_of_view: FLAT.fov, sensor_array_dimensions: [FLAT.width, FLAT.height] }
       : { field_of_view: 360 },
@@ -143,9 +145,11 @@ await page.reload();
 await ready();
 await page.waitForTimeout(800);
 
-check('séquence chargée', (await page.textContent('#total')) === '7');
+check('séquence chargée', (await page.textContent('#total')) === '8');
+check('bouton « Corriger les ignorées » : 2 photos détectées',
+  await page.evaluate(() => !document.getElementById('fixIgnoredBtn').hidden && document.getElementById('ignoredCount').textContent === '2'));
 const statuses = await page.evaluate(() => [...document.querySelectorAll('.thumb')].map(t => t.className.match(/st-(\w+)/)[1]));
-check('statuts des miniatures', statuses.join() === 'corrected,raw,ignored,raw,raw,corrected,raw', statuses.join());
+check('statuts des miniatures', statuses.join() === 'corrected,raw,ignored,raw,raw,corrected,raw,ignored', statuses.join());
 
 // Verticales : deux poteaux dans des directions différentes.
 await page.keyboard.press('KeyJ');
@@ -195,7 +199,7 @@ check('PATCH photo 2 : pitch / roll / yaw', JSON.stringify(Object.keys(byId[pid(
   JSON.stringify(byId[pid(1)]?.body));
 check('PATCH photo 3 : roll 0 → 0,01', byId[pid(2)]?.body.pitch === 3 && byId[pid(2)]?.body.roll === 0.01, JSON.stringify(byId[pid(2)]?.body));
 const finalStatuses = await page.evaluate(() => [...document.querySelectorAll('.thumb')].map(t => t.className.match(/st-(\w+)/)[1]));
-check('statuts après synchronisation', finalStatuses.join() === 'corrected,synced,synced,raw,raw,corrected,raw', finalStatuses.join());
+check('statuts après synchronisation', finalStatuses.join() === 'corrected,synced,synced,raw,raw,corrected,raw,ignored', finalStatuses.join());
 
 // Photo 4 : photo à plat, affichée comme Panoramax sur une portion de sphère de 70°.
 await page.evaluate(() => { if (!document.body.classList.contains('quad-on')) document.getElementById('quadBtn').click(); });
@@ -283,6 +287,18 @@ await page.waitForTimeout(2000);
 const carried = Object.fromEntries(patches.map(x => [x.id, x.body]));
 check('report : PATCH des photos 5, 6 et 7 (roll 0 → 0,01 en 360°)', patches.length === 3
   && [4, 5, 6].every(i => carried[pid(i)]?.pitch === -2.49 && carried[pid(i)]?.roll === 0.01), JSON.stringify(carried));
+
+// Correction groupée des valeurs ignorées : seule la photo 8 l'est encore (la 3 a été envoyée).
+check('bouton « Corriger les ignorées » : 1 photo restante', (await page.textContent('#ignoredCount')) === '1');
+await page.evaluate(() => document.getElementById('fixIgnoredBtn').click());
+await page.waitForTimeout(200);
+check('ignorées corrigées : photo 8 en attente, bouton masqué',
+  (await statusOf(7)) === 'pending' && await page.evaluate(() => document.getElementById('fixIgnoredBtn').hidden));
+patches.length = 0;
+await page.keyboard.press('KeyV');
+await page.waitForTimeout(1500);
+check('ignorées corrigées : PATCH pitch / roll 0 → 0,01, yaw conservé',
+  patches.length === 1 && JSON.stringify(patches[0].body) === '{"pitch":0.01,"roll":0.01,"yaw":90}', JSON.stringify(patches[0]?.body));
 
 await browser.close();
 console.log(failures ? `\n${failures} échec(s)` : '\nTous les tests passent.');

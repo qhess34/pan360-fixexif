@@ -558,3 +558,13 @@ body {
 .carry input { accent-color: var(--accent); margin: 0; }
 .carry { gap: 8px; }
 .carry label { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
+
+/* --- Correction groupée des valeurs ignorées par Panoramax --- */
+.fix-ignored {
+  padding: 0 8px;
+  font-size: 12px;
+  border-color: var(--st-ignored);
+  color: #fff;
+  background: rgba(217, 83, 79, .25);
+}
+.fix-ignored:hover:not(:disabled) { background: rgba(217, 83, 79, .45); }

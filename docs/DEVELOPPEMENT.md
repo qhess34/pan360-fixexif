@@ -142,6 +142,14 @@ Le fichier est découpé en sections commentées, dans cet ordre :
 `refreshUi()` est le point unique de mise à jour de l'interface après un changement d'état. Elle
 rafraîchit aussi la bande de miniatures et planifie le redessin de la courbe.
 
+### Correction groupée des valeurs ignorées (`fixIgnored()`)
+
+`ignoredItems()` liste les photos de statut `ignored` : valeurs Panoramax non nulles que le viewer
+n'applique pas (`panoramaxApplies()` faux). `fixIgnored()` leur donne pour modification
+`panoramaxPayload(original)`, c'est-à-dire les mêmes valeurs avec l'angle nul remplacé par `NUDGE`. Le
+bouton `#fixIgnoredBtn` n'est affiché que s'il y a au moins une photo concernée (`refreshUi()`) ; le
+nombre est aussi signalé au chargement de la séquence. Rien n'est envoyé sans Synchroniser.
+
 ### Report de la dernière correction (`carryCorrection()`)
 
 Coches « Reporter sur les suivantes : Pitch / Roll / Yaw » (`settings.carry = {pitch, roll, yaw}`, clé

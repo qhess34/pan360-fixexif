@@ -385,7 +385,9 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
       showImage(Math.min(Math.max(0, startIndex), items.length - 1));
 
       const pending = Object.keys(state.edits).length;
-      toast(`${items.length} photos chargées` + (pending ? ` — ${pending} modification(s) locale(s) restaurée(s)` : ''), 'ok');
+      const ignored = ignoredItems().length;
+      toast(`${items.length} photos chargées` + (pending ? ` — ${pending} modification(s) locale(s) restaurée(s)` : '')
+        + (ignored ? ` — ${ignored} photo(s) avec des valeurs ignorées par Panoramax` : ''), ignored ? '' : 'ok', ignored ? 6000 : 4000);
     } catch (e) {
       console.error(e);
       toast('Impossible de charger la séquence : ' + describeError(e), 'err', 8000);
@@ -947,6 +949,24 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   const nextRaw = () => goToNext(it => ['raw', 'ignored'].includes(itemStatus(it)), 'Aucune autre photo non corrigée.');
   const nextDirty = () => goToNext(isDirty, 'Aucune autre photo modifiée en attente.');
 
+  /** Photos dont les valeurs Panoramax sont ignorées par le viewer (pitch = 0 ou roll = 0 en 360°…). */
+  const ignoredItems = () => state.items.filter(it => itemStatus(it) === 'ignored');
+
+  /**
+   * Rend applicables, en une fois, les corrections ignorées par Panoramax : l'angle nul est remplacé par
+   * 0,01° (panoramaxPayload()), les autres valeurs ne changent pas. Les photos passent « en attente » ;
+   * l'envoi reste à faire avec Synchroniser.
+   */
+  function fixIgnored() {
+    const todo = ignoredItems();
+    if (!todo.length) { toast('Aucune photo avec des valeurs ignorées par Panoramax.'); return; }
+    todo.forEach(it => { state.edits[it.id] = panoramaxPayload(it.original, it.is360); });
+    persistEdits();
+    applyPose();
+    refreshUi();
+    toast(`${todo.length} photo(s) corrigée(s) pour que Panoramax applique leurs valeurs — Synchroniser pour les envoyer.`, 'ok', 6000);
+  }
+
   // ---------------------------------------------------------------------------
   // Courbe pitch / roll de la séquence
   // ---------------------------------------------------------------------------
@@ -1161,6 +1181,9 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   function refreshUi() {
     const item = currentItem();
     const dirtyCount = state.items.filter(isDirty).length;
+    const ignoredCount = ignoredItems().length;
+    $('fixIgnoredBtn').hidden = !ignoredCount;
+    $('ignoredCount').textContent = ignoredCount;
     updateStrip();
     scheduleChart();
     $('dirtyCount').textContent = dirtyCount;
@@ -1328,6 +1351,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     };
   });
   $('nextDirtyBtn').onclick = nextDirty;
+  $('fixIgnoredBtn').onclick = fixIgnored;
   $('yaw_fix').onclick = fixYaw;
   $('fullscreenBtn').onclick = () => {
     if (document.fullscreenElement) document.exitFullscreen();
