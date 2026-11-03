@@ -56,6 +56,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     remember: store.get('remember', false),
     quality: store.get('quality', 'sd'),
     quad: store.get('quad', false),
+    carry: store.get('carry', false),
     token: store.get('token', '') || store.get('token', '', sessionStorage),
   };
 
@@ -64,6 +65,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     store.set('remember', settings.remember);
     store.set('quality', settings.quality);
     store.set('quad', settings.quad);
+    store.set('carry', settings.carry);
     if (settings.remember) {
       store.set('token', settings.token);
       store.del('token', sessionStorage);
@@ -83,6 +85,9 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     index: 0,
     edits: {},      // id -> {pitch, roll, yaw} (modifications non synchronisées)
     synced: new Set(), // photos envoyées pendant cette session
+    carry: null,       // dernière correction faite à la main : {values, index}, voir carryCorrection()
+    carried: new Set(), // photos remplies automatiquement par le report (pas retouchées à la main)
+    noCarry: new Set(), // photos annulées à la main : le report ne les remplit plus
     busy: false,
   };
 
@@ -363,6 +368,9 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
       $('sequencePanel').hidden = false;
       $('chartPanel').hidden = false;
       state.synced = new Set();
+      state.carry = null;
+      state.carried = new Set();
+      state.noCarry = new Set();
       buildStrip();
       $('controls').classList.remove('disabled');
       $('total').textContent = items.length;
@@ -414,9 +422,35 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     v.yaw = round2(norm360(v.yaw));
     state.edits[item.id] = v;
     if (!isDirty(item)) delete state.edits[item.id];
+    else state.carry = { values: { pitch: v.pitch, roll: v.roll, yaw: v.yaw }, index: state.index };
+    state.carried.delete(item.id); // retouchée à la main : le report ne l'écrasera plus
     persistEdits();
     applyPose();
     refreshUi();
+  }
+
+  /**
+   * Option « Reporter sur les suivantes » : en arrivant sur une photo située après la dernière photo
+   * corrigée à la main, on lui applique les mêmes valeurs, qu'elle soit non corrigée, ignorée par
+   * Panoramax ou déjà corrigée sur Panoramax. Une caméra montée de travers garde en général la même
+   * inclinaison sur toute la séquence. Une photo déjà remplie par le report suit la correction la
+   * plus récente ; les photos modifiées à la main ou envoyées pendant la session ne sont jamais écrasées.
+   */
+  function carryCorrection(index) {
+    const item = state.items[index];
+    const c = state.carry;
+    if (!settings.carry || !c || !item || index <= c.index || state.noCarry.has(item.id)) return;
+    const status = itemStatus(item);
+    if (!['raw', 'ignored', 'corrected'].includes(status) && !(status === 'pending' && state.carried.has(item.id))) return;
+    const prev = state.edits[item.id];
+    if (prev && ['pitch', 'roll', 'yaw'].every(k => same(prev[k], c.values[k]))) return; // déjà à jour
+    state.edits[item.id] = { ...c.values };
+    if (!isDirty(item)) { delete state.edits[item.id]; state.carried.delete(item.id); return; }
+    state.carried.add(item.id);
+    persistEdits();
+    toast(`Correction de la photo ${c.index + 1} reportée : pitch ${fmt(c.values.pitch)}°, roll ${fmt(c.values.roll)}°`
+      + (c.values.yaw ? `, yaw ${fmt(c.values.yaw)}°` : ''), 'ok', 2500);
+    state.carry = { ...c, index };
   }
 
   // ---------------------------------------------------------------------------
@@ -511,6 +545,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   function showImage(index) {
     const item = state.items[index];
     if (!item) return;
+    carryCorrection(index);
     state.index = index;
     clearMarks();
     if (!viewer) {
@@ -632,6 +667,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     const item = currentItem();
     if (!item || !state.edits[item.id]) return;
     delete state.edits[item.id];
+    if (state.carried.delete(item.id)) state.noCarry.add(item.id);
     persistEdits();
     applyPose();
     refreshUi();
@@ -1015,6 +1051,7 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     item.original = updated && res.properties['pers:pitch'] !== undefined ? updated : panoramaxPayload(v, item.is360);
     delete state.edits[item.id];
     state.synced.add(item.id);
+    state.carried.delete(item.id);
   }
 
   async function sync(items) {
@@ -1228,6 +1265,8 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
     settings.token = '';
     settings.remember = false;
     settings.quality = 'sd';
+    settings.carry = false;
+    $('carryChk').checked = false;
     state.edits = {};
     $('settingsDialog').close();
     if (state.items.length) { applyPose(); refreshUi(); }
@@ -1271,6 +1310,13 @@ import { Euler, MathUtils, Quaternion, Vector3 } from 'three';
   $('quadBtn').onclick = () => setQuad(!settings.quad);
   quadCells().forEach(cell => { cell.onclick = () => lookAt(Number(cell.dataset.dir)); });
   $('nextRawBtn').onclick = nextRaw;
+  $('carryChk').checked = settings.carry;
+  $('carryChk').onchange = e => {
+    settings.carry = e.target.checked;
+    saveSettings();
+    e.target.blur(); // les raccourcis clavier restent actifs
+    if (settings.carry && !state.carry) toast('Corrigez une photo : sa correction sera reportée sur les suivantes non corrigées.');
+  };
   $('nextDirtyBtn').onclick = nextDirty;
   $('yaw_fix').onclick = fixYaw;
   $('fullscreenBtn').onclick = () => {

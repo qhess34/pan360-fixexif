@@ -53,6 +53,13 @@ Les outils d'horizon ne modifient jamais le yaw, et les repères cliqués resten
 - **Miniatures** : chaque photo porte un statut — en attente d'envoi, synchronisée, déjà corrigée,
   ignorée par Panoramax, non corrigée. Boutons **Non corrigée ⏭** (N) et **Modifiée ⏭** (M).
 - **Courbe pitch / roll** : repère les photos qui sortent de la tendance ; survol = valeurs, clic = ouvre la photo.
+- **Reporter la dernière correction sur les suivantes** (coche au-dessus des miniatures) : en avançant
+  dans la séquence, chaque photo suivante reçoit automatiquement les valeurs de la dernière photo que
+  vous avez corrigée, y compris si elle était déjà corrigée sur Panoramax. Pratique quand la caméra garde
+  la même inclinaison sur toute la séquence.
+  - Une photo remplie ainsi suit toujours la correction la plus récente.
+  - Une photo retouchée à la main, envoyée ou annulée (« Annuler ») n'est jamais écrasée.
+  - Les photos précédentes ne sont pas touchées.
 - **Panoramax ↗** (O) : ouvre la photo courante sur le site Panoramax pour comparer.
 
 Les modifications non envoyées sont conservées dans le navigateur : vous pouvez fermer l'onglet et
